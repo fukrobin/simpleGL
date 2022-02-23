@@ -1,0 +1,10 @@
+# idea
+.idea/
+*.iml
+
+#gradle
+.gradle/
+build/
+
+#log4j2
+logs/
