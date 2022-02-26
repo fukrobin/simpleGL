@@ -2,12 +2,8 @@ package org.robin.gl;
 
 import static org.lwjgl.glfw.Callbacks.glfwFreeCallbacks;
 import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_UP;
-import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
 import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
-import static org.lwjgl.glfw.GLFW.GLFW_REPEAT;
 import static org.lwjgl.glfw.GLFW.GLFW_RESIZABLE;
 import static org.lwjgl.glfw.GLFW.GLFW_TRUE;
 import static org.lwjgl.glfw.GLFW.GLFW_VISIBLE;
@@ -15,7 +11,6 @@ import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
 import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
 import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
-import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
 import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
@@ -25,6 +20,7 @@ import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetKeyCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowPos;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose;
+import static org.lwjgl.glfw.GLFW.glfwSetWindowSizeCallback;
 import static org.lwjgl.glfw.GLFW.glfwShowWindow;
 import static org.lwjgl.glfw.GLFW.glfwSwapBuffers;
 import static org.lwjgl.glfw.GLFW.glfwSwapInterval;
@@ -74,10 +70,8 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.Objects;
-import org.joml.Matrix4d;
+import org.joml.Math;
 import org.joml.Matrix4f;
-import org.joml.Vector3d;
-import org.joml.Vector4d;
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.glfw.GLFWVidMode;
@@ -94,12 +88,28 @@ public class HelloWorld {
 
   // The window handle
   private long window;
-  private int mixValue;
+
+  private int width;
+  private int height;
+
   private int texture1;
   private int texture2;
 
+  private final Matrix4f modelMatrix;
+  private final Matrix4f viewMatrix;
+  private final Matrix4f projectionMatrix;
+
   public static void main(String[] args) {
     new HelloWorld().run();
+  }
+
+  public HelloWorld() {
+    modelMatrix = new Matrix4f();
+    viewMatrix = new Matrix4f();
+    projectionMatrix = new Matrix4f();
+
+    width = 300;
+    height = 300;
   }
 
   public void run() {
@@ -133,7 +143,7 @@ public class HelloWorld {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // the window will be resizable
 
     // Create the window
-    window = glfwCreateWindow(300, 300, "Hello World!", NULL, NULL);
+    window = glfwCreateWindow(width, height, "Hello World!", NULL, NULL);
     if (window == NULL) {
       throw new RuntimeException("Failed to create the GLFW window");
     }
@@ -143,12 +153,10 @@ public class HelloWorld {
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
         glfwSetWindowShouldClose(window, true); // We will detect this in the rendering loop
       }
-      if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-        mixValue++;
-      }
-      if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-        mixValue--;
-      }
+    });
+    glfwSetWindowSizeCallback(window, (window1, width1, height1) -> {
+      this.width = width1;
+      this.height = height1;
     });
 
     // Get the thread stack and push a new frame
@@ -275,6 +283,15 @@ public class HelloWorld {
       setupVao();
       createTexture();
 
+      modelMatrix.rotate(Math.toRadians(55.0f), -1.0f, 0, 0);
+      viewMatrix.translate(0, 0, -3);
+      projectionMatrix.perspective(Math.toRadians(45.0f), (float) width / (float) height, 0.1f,
+          100f);
+
+      shaderProgram.bind();
+      shaderProgram.setUniform("model", modelMatrix);
+      shaderProgram.setUniform("view", viewMatrix);
+      shaderProgram.setUniform("projection", projectionMatrix);
       while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the framebuffer
 
