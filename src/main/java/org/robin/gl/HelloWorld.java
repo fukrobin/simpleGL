@@ -15,7 +15,6 @@ import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
 import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
 import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
-import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
 import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
@@ -74,16 +73,13 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.Objects;
-import org.joml.Matrix4d;
-import org.joml.Matrix4f;
-import org.joml.Vector3d;
-import org.joml.Vector4d;
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
+import org.robin.gl.utils.Util;
 
 /**
  * Simple OpEnGL application.
@@ -193,28 +189,17 @@ public class HelloWorld {
     int ebo = glGenBuffers();
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 
-    try (MemoryStack stack = MemoryStack.stackPush()) {
-      FloatBuffer vertices = stack.floats(
-          //---- 位置 ----  - 纹理坐标 -
-          0.5f, 0.5f, 0.0f, 2.0f, 2.0f, // 右上角
-          0.5f, -0.5f, 0.0f, 2.0f, 0.0f, // 右下角
-          -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, // 左下角
-          -0.5f, 0.5f, 0.0f, 0.0f, 2.0f   // 左上角
-      );
-      IntBuffer indices = stack.ints(
-          0, 1, 3,
-          1, 2, 3
-      );
+    FloatBuffer vertices = Objects.requireNonNull(Util.loadCsvToFloatBuffer("vertices.csv"));
+    IntBuffer indices = Objects.requireNonNull(Util.loadCsvToIntBuffer("indices.csv"));
 
-      glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
-      glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
-      // position attribute
-      glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
-      glEnableVertexAttribArray(0);
-      // texture coord attribute
-      glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
-      glEnableVertexAttribArray(1);
-    }
+    glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glEnableVertexAttribArray(0);
+    // texture coord attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
+    glEnableVertexAttribArray(1);
     glBindVertexArray(0);
   }
 

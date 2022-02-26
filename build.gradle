@@ -12,6 +12,7 @@ project.ext {
     lwjglVersion = "3.3.0"
     jomlVersion = "1.10.2"
     lwjglNatives = "natives-windows"
+    COMMONS_CSV_VERSION = "1.9.0"
 }
 
 dependencies {
@@ -26,6 +27,8 @@ dependencies {
     runtimeOnly "org.lwjgl:lwjgl-opengl::$lwjglNatives"
     runtimeOnly "org.lwjgl:lwjgl-stb::$lwjglNatives"
     implementation "org.joml:joml:${jomlVersion}"
+
+    implementation "org.apache.commons:commons-csv:${project.COMMONS_CSV_VERSION}"
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
