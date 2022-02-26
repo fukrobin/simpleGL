@@ -34,7 +34,7 @@ public class Util {
       CSVParser csvRecords = CSVFormat.DEFAULT.parse(new InputStreamReader(stream));
       List<Float> verticesList = new ArrayList<>();
       for (CSVRecord csvRecord : csvRecords) {
-        csvRecord.stream().map(Float::valueOf).forEach(verticesList::add);
+        csvRecord.stream().map(String::trim).map(Float::valueOf).forEach(verticesList::add);
       }
       FloatBuffer buffer = BufferUtils.createFloatBuffer(verticesList.size());
       verticesList.forEach(buffer::put);
@@ -58,7 +58,7 @@ public class Util {
       CSVParser csvRecords = CSVFormat.DEFAULT.parse(new InputStreamReader(stream));
       List<Integer> verticesList = new ArrayList<>();
       for (CSVRecord csvRecord : csvRecords) {
-        csvRecord.stream().map(Integer::valueOf).forEach(verticesList::add);
+        csvRecord.stream().map(String::trim).map(Integer::valueOf).forEach(verticesList::add);
       }
       IntBuffer buffer = BufferUtils.createIntBuffer(verticesList.size());
       verticesList.forEach(buffer::put);
