@@ -195,11 +195,11 @@ public class HelloWorld {
 
     try (MemoryStack stack = MemoryStack.stackPush()) {
       FloatBuffer vertices = stack.floats(
-          //---- 位置 ----  ---- 颜色 ----     - 纹理坐标 -
-          0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 2.0f, 2.0f, // 右上角
-          0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 2.0f, 0.0f, // 右下角
-          -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // 左下角
-          -0.5f, 0.5f, 0.0f, 0.5f, 0.5f, 0.5f, 0.0f, 2.0f   // 左上角
+          //---- 位置 ----  - 纹理坐标 -
+          0.5f, 0.5f, 0.0f, 2.0f, 2.0f, // 右上角
+          0.5f, -0.5f, 0.0f, 2.0f, 0.0f, // 右下角
+          -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, // 左下角
+          -0.5f, 0.5f, 0.0f, 0.0f, 2.0f   // 左上角
       );
       IntBuffer indices = stack.ints(
           0, 1, 3,
@@ -209,14 +209,11 @@ public class HelloWorld {
       glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
       glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
       // position attribute
-      glVertexAttribPointer(0, 3, GL_FLOAT, false, 32, 0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
       glEnableVertexAttribArray(0);
-      // position attribute
-      glVertexAttribPointer(1, 3, GL_FLOAT, false, 32, 12);
-      glEnableVertexAttribArray(1);
       // texture coord attribute
-      glVertexAttribPointer(2, 2, GL_FLOAT, false, 32, 24);
-      glEnableVertexAttribArray(2);
+      glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
+      glEnableVertexAttribArray(1);
     }
     glBindVertexArray(0);
   }
@@ -256,9 +253,6 @@ public class HelloWorld {
 
   private void render() {
     shaderProgram.bind();
-    shaderProgram.setUniform("mixValue", (float) Math.sin(mixValue));
-    shaderProgram.setUniform("transform",
-        new Matrix4f().rotate((float) glfwGetTime(), 0, 0, 1).translate(0.5f, -0.5f, 0.0f));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture1);
