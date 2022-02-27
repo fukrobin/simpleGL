@@ -1,12 +1,18 @@
 package org.robin.gl;
 
 import static org.lwjgl.glfw.Callbacks.glfwFreeCallbacks;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
 import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_D;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_UP;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_X;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_Z;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
@@ -19,13 +25,16 @@ import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
 import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
 import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
+import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
 import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
 import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
 import static org.lwjgl.glfw.GLFW.glfwPollEvents;
+import static org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetFramebufferSizeCallback;
+import static org.lwjgl.glfw.GLFW.glfwSetInputMode;
 import static org.lwjgl.glfw.GLFW.glfwSetKeyCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowPos;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose;
@@ -49,12 +58,17 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.Version;
+import org.lwjgl.glfw.GLFWCursorPosCallbackI;
 import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI;
+import org.lwjgl.glfw.GLFWKeyCallbackI;
 import org.lwjgl.glfw.GLFWVidMode;
+import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
 import org.lwjgl.opengl.*;
 import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
@@ -67,31 +81,49 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
+  private static final List<Vector3f> positions = new ArrayList<>() {
+    {
+      add(new Vector3f(0.0f, 0.0f, 0.0f));
+      add(new Vector3f(2.0f, 5.0f, -15.0f));
+      add(new Vector3f(-1.5f, -2.2f, -2.5f));
+      add(new Vector3f(-3.8f, -2.0f, -12.3f));
+      add(new Vector3f(2.4f, -0.4f, -3.5f));
+      add(new Vector3f(-1.7f, 3.0f, -7.5f));
+      add(new Vector3f(1.3f, -2.0f, -2.5f));
+      add(new Vector3f(1.5f, 2.0f, -2.5f));
+      add(new Vector3f(1.5f, 0.2f, -1.5f));
+      add(new Vector3f(-1.3f, 1.0f, -1.5f));
+    }
+  };
+  private final Matrix4f projectionMatrix;
+  private final Camera camera;
+  private final AtomicBoolean firstCursor = new AtomicBoolean(true);
   // The window handle
   private long window;
-
   private int width;
   private int height;
-
   private int texture1;
   private int texture2;
-
-  private final Matrix4f viewMatrix;
-  private final Matrix4f projectionMatrix;
-
-  public static void main(String[] args) {
-    new Application().run();
-  }
+  private double lastCursorPosX;
+  private double lastCursorPosY;
+  private float lastFrameTime;
+  private int vao;
+  private int vbo;
+  private ShaderProgram shaderProgram;
 
   /**
    * 设置 Window 的一些初始值.
    */
   public Application() {
-    viewMatrix = new Matrix4f();
     projectionMatrix = new Matrix4f();
 
     width = 800;
     height = 600;
+    camera = new Camera(new Vector3f(0, 0, 3));
+  }
+
+  public static void main(String[] args) {
+    new Application().run();
   }
 
   /**
@@ -100,105 +132,140 @@ public class Application {
   public void run() {
     System.out.println("Hello LWJGL " + Version.getVersion() + "!");
 
-    init();
-    loop();
+    try {
+      init();
+      loop();
 
-    // Free the window callbacks and destroy the window
-    glfwFreeCallbacks(window);
-    glfwDestroyWindow(window);
-
-    // Terminate GLFW and free the error callback
-    glfwTerminate();
-    Objects.requireNonNull(glfwSetErrorCallback(null)).free();
+      // Free the window callbacks and destroy the window
+      glfwFreeCallbacks(window);
+      glfwDestroyWindow(window);
+    } catch (Exception e) {
+      e.printStackTrace();
+    } finally {
+      glfwTerminate();
+      Objects.requireNonNull(glfwSetErrorCallback(null)).free();
+    }
   }
 
-  private void init() {
-    // Set up an error callback. The default implementation
-    // will print the error message in System.err.
-    GLFWErrorCallback.createPrint(System.err).set();
-
-    // Initialize GLFW. Most GLFW functions will not work before doing this.
-    if (!glfwInit()) {
-      throw new IllegalStateException("Unable to initialize GLFW");
-    }
-
-    // Configure GLFW
-    glfwDefaultWindowHints(); // optional, the current window hints are already the default
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // the window will stay hidden after creation
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // the window will be resizable
-
-    // Create the window
-    window = glfwCreateWindow(width, height, "Hello World!", NULL, NULL);
-    if (window == NULL) {
-      throw new RuntimeException("Failed to create the GLFW window");
-    }
-
-    // Set up a key callback. It will be called every time a key is pressed, repeated or released.
-    glfwSetKeyCallback(window, (window, key, scancode, action, mods) -> {
-      if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
-        glfwSetWindowShouldClose(window, true);
-      }
-      boolean pressed = action == GLFW_PRESS || action == GLFW_REPEAT;
-      if (pressed) {
-        float step = 0.1f;
-        switch (key) {
-          case GLFW_KEY_UP:
-            viewMatrix.translate(0, 0, step);
-            break;
-          case GLFW_KEY_DOWN:
-            viewMatrix.translate(0, 0, -step);
-            break;
-          case GLFW_KEY_LEFT:
-            viewMatrix.translate(step, 0, 0);
-            break;
-          case GLFW_KEY_RIGHT:
-            viewMatrix.translate(-step, 0, 0);
-            break;
-          case GLFW_KEY_Z:
-            viewMatrix.translate(0, step, 0);
-            break;
-          case GLFW_KEY_X:
-            viewMatrix.translate(0, -step, 0);
-            break;
-          default:
-        }
-      }
-    });
-    glfwSetWindowSizeCallback(window, (window1, width1, height1) -> {
-      this.width = width1;
-      this.height = height1;
-      updateProjectionMatrix();
-    });
-    glfwSetFramebufferSizeCallback(window,
-        (window1, width1, height1) -> glViewport(0, 0, width1, height1));
-
-    // Get the thread stack and push a new frame
-    try (MemoryStack stack = stackPush()) {
-      IntBuffer width = stack.mallocInt(1); // int*
-      IntBuffer height = stack.mallocInt(1); // int*
-      glfwGetWindowSize(window, width, height);
-      GLFWVidMode videoMode = Objects.requireNonNull(glfwGetVideoMode(glfwGetPrimaryMonitor()));
-
-      glfwSetWindowPos(
-          window,
-          (videoMode.width() - width.get(0)) / 2,
-          (videoMode.height() - height.get(0)) / 2
-      );
-    } // the stack frame is popped automatically
-
-    // Make the OpenGL context current
-    glfwMakeContextCurrent(window);
-    // Enable v-sync
-    glfwSwapInterval(1);
+  private void init() throws Exception {
+    initGLFW();
+    initOpenGL();
 
     // Make the window visible
     glfwShowWindow(window);
   }
 
-  private int vao;
-  private int vbo;
+  /**
+   * 初始化 GLFW.
+   */
+  @SuppressWarnings("CheckStyle")
+  private void initGLFW() {
+    GLFWErrorCallback.createPrint(System.err).set();
+    if (!glfwInit()) {
+      throw new IllegalStateException("Unable to initialize GLFW");
+    }
 
-  private ShaderProgram shaderProgram;
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+
+    window = glfwCreateWindow(width, height, "Hello World!", NULL, NULL);
+    if (window == NULL) {
+      throw new RuntimeException("Failed to create the GLFW window");
+    }
+
+    glfwSetKeyCallback(window, keyCallback());
+    glfwSetWindowSizeCallback(window, windowSizeCallback());
+    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback());
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetCursorPosCallback(window, cursorPosCallback());
+
+    centerWindow();
+
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
+  }
+
+  /**
+   * 将 Window 在屏幕中居中放置.
+   */
+  public void centerWindow() {
+    GLFWVidMode videoMode = Objects.requireNonNull(glfwGetVideoMode(glfwGetPrimaryMonitor()));
+
+    glfwSetWindowPos(
+        window,
+        (videoMode.width() - width) / 2,
+        (videoMode.height() - height) / 2
+    );
+  }
+
+  @SuppressWarnings("CheckStyle")
+  private void initOpenGL() throws IOException {
+    GL.createCapabilities();
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(1.0f, 1.0f, 1.0f, 0.0f);
+    setupShader();
+    setupVao();
+    createTexture();
+  }
+
+  private GLFWWindowSizeCallbackI windowSizeCallback() {
+    return (window1, width1, height1) -> {
+      this.width = width1;
+      this.height = height1;
+      updateProjectionMatrix();
+    };
+  }
+
+  private GLFWCursorPosCallbackI cursorPosCallback() {
+    return (window1, posX, posY) -> {
+      if (firstCursor.getAndSet(false)) {
+        lastCursorPosX = posX;
+        lastCursorPosY = posY;
+      }
+      double offsetX = posX - lastCursorPosX;
+      double offsetY = posY - lastCursorPosY;
+      lastCursorPosX = posX;
+      lastCursorPosY = posY;
+      camera.rotate(offsetY, offsetX);
+    };
+  }
+
+  private GLFWFramebufferSizeCallbackI framebufferSizeCallback() {
+    return (window1, sizeX, sizeY) -> glViewport(0, 0, sizeX, sizeY);
+  }
+
+  private GLFWKeyCallbackI keyCallback() {
+    return (window1, key, scancode, action, mods) -> {
+
+      if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
+        glfwSetWindowShouldClose(window, true);
+      }
+      boolean pressed = action == GLFW_PRESS || action == GLFW_REPEAT;
+      if (pressed) {
+        switch (key) {
+          case GLFW_KEY_W:
+          case GLFW_KEY_UP:
+            camera.forward();
+            break;
+          case GLFW_KEY_S:
+          case GLFW_KEY_DOWN:
+            camera.backward();
+            break;
+          case GLFW_KEY_A:
+          case GLFW_KEY_LEFT:
+            camera.toLeft();
+            break;
+          case GLFW_KEY_D:
+          case GLFW_KEY_RIGHT:
+            camera.toRight();
+            break;
+          default:
+        }
+      }
+    };
+  }
 
   private void setupVao() {
     vao = glGenVertexArrays();
@@ -257,24 +324,11 @@ public class Application {
     }
   }
 
-  private static final List<Vector3f> positions = new ArrayList<>() {
-    {
-      add(new Vector3f(0.0f, 0.0f, 0.0f));
-      add(new Vector3f(2.0f, 5.0f, -15.0f));
-      add(new Vector3f(-1.5f, -2.2f, -2.5f));
-      add(new Vector3f(-3.8f, -2.0f, -12.3f));
-      add(new Vector3f(2.4f, -0.4f, -3.5f));
-      add(new Vector3f(-1.7f, 3.0f, -7.5f));
-      add(new Vector3f(1.3f, -2.0f, -2.5f));
-      add(new Vector3f(1.5f, 2.0f, -2.5f));
-      add(new Vector3f(1.5f, 0.2f, -1.5f));
-      add(new Vector3f(-1.3f, 1.0f, -1.5f));
-    }
-  };
-
   private void render() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     shaderProgram.bind();
-    shaderProgram.setUniform("view", viewMatrix);
+    shaderProgram.setUniform("view", camera.getViewMatrix());
     shaderProgram.setUniform("projection", projectionMatrix);
 
     glActiveTexture(GL_TEXTURE0);
@@ -299,27 +353,19 @@ public class Application {
 
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
   private void loop() {
-    GL.createCapabilities();
-    glEnable(GL_DEPTH_TEST);
-    glClearColor(1.0f, 1.0f, 1.0f, 0.0f);
-
     try {
-      setupShader();
-      setupVao();
-      createTexture();
 
-      viewMatrix.translate(0, 0, -3);
       updateProjectionMatrix();
 
       while (!glfwWindowShouldClose(window)) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        preFrame();
+
         render();
 
+        postFrame();
         glfwSwapBuffers(window);
         glfwPollEvents();
       }
-    } catch (IOException ignored) {
-      //noinspection CheckStyle
     } finally {
       if (shaderProgram != null) {
         shaderProgram.cleanup();
@@ -327,6 +373,17 @@ public class Application {
       glDeleteBuffers(vao);
       glDeleteBuffers(vbo);
     }
+  }
+
+  protected void preFrame() {
+    float currentFrameTime = (float) glfwGetTime();
+    float deltaTime = currentFrameTime - lastFrameTime;
+    lastFrameTime = currentFrameTime;
+    camera.setSpeed(2.5f * deltaTime);
+  }
+
+  protected void postFrame() {
+
   }
 
   private void updateProjectionMatrix() {
