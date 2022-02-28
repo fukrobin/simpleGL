@@ -15,12 +15,48 @@ import org.joml.Vector3f;
  */
 public class Camera {
 
+  private static final Vector3f DEST = new Vector3f();
+
+  /**
+   * 试图矩阵.
+   */
   private final Matrix4f viewMatrix;
 
+  /**
+   * 世界坐标系的 Y 轴向量.
+   */
+  private final Vector3f worldUp;
+
+  /**
+   * 摄像机的位置.
+   */
   private final Vector3f position;
+
+  /**
+   * 摄像机视线方向，随着摄像机的旋转而改变.
+   */
+  private final Vector3f target;
+  /**
+   * 摄像机坐标系的 Y 轴向量. 随着摄像机的旋转而改变
+   */
+  private final Vector3f up;
+  /**
+   * 摄像机的右向量.
+   */
+  private final Vector3f right;
+
+  /**
+   * 摄像机的累计旋转角度.
+   */
   private final Vector3f rotation;
 
+  /**
+   * 移动速度.
+   */
   private float speed;
+  /**
+   * 鼠标灵敏度.
+   */
   private float rotateSensitivity;
 
   /**
@@ -36,7 +72,7 @@ public class Camera {
    * @param position 摄像机的初始位置.
    */
   public Camera(Vector3f position) {
-    this(position, new Vector3f());
+    this(position, new Vector3f(0, 1, 0), new Vector3f(0, 0, -1), new Vector3f(0, -90, 0));
   }
 
   /**
@@ -45,14 +81,21 @@ public class Camera {
    * @param position 摄像机的初始位置
    * @param rotation 摄像机的初始旋转
    */
-  public Camera(Vector3f position, Vector3f rotation) {
+  public Camera(Vector3f position, Vector3f up, Vector3f target, Vector3f rotation) {
     this.position = position;
+
+    this.target = target;
+    this.worldUp = up;
+    this.up = new Vector3f();
+    this.right = new Vector3f();
+
     this.rotation = rotation;
 
     this.viewMatrix = new Matrix4f();
 
-    this.speed = 1;
+    this.speed = 0.05f;
     this.rotateSensitivity = 0.05f;
+    updateCameraVectors();
   }
 
   //////////////////////////////////////////////////
@@ -66,17 +109,15 @@ public class Camera {
    * @see Matrix4f#lookAt
    */
   public Matrix4f getViewMatrix() {
-    viewMatrix.identity();
-    // First do the rotation so camera rotates over its position
-    viewMatrix.rotate(toRadians(rotation.x), new Vector3f(1, 0, 0))
-              .rotate(toRadians(rotation.y), new Vector3f(0, 1, 0));
-    // Then do the translation
-    viewMatrix.translate(-position.x, -position.y, -position.z);
-    return viewMatrix;
+    return viewMatrix.setLookAt(position, position.add(target, DEST), up);
   }
 
   public Vector3f getPosition() {
     return position;
+  }
+
+  public Vector3f getRotation() {
+    return rotation;
   }
 
   public float getSpeed() {
@@ -95,52 +136,32 @@ public class Camera {
     this.rotateSensitivity = rotateSensitivity;
   }
 
-  public Vector3f getRotation() {
-    return rotation;
-  }
-
   //////////////////////////////////////////////////
   // Function method
   //////////////////////////////////////////////////
 
-  /**
-   * 将摄像机在其自身坐标内位移一定距离.
-   *
-   * @param offsetX (摄像机坐标系)X 轴方向的位移距离
-   * @param offsetY (摄像机坐标系)Y 轴方向的位移距离
-   * @param offsetZ (摄像机坐标系)Z 轴方向的位移距离
-   */
-  public void move(float offsetX, float offsetY, float offsetZ) {
-    if (offsetZ != 0) {
-      position.x += sin(toRadians(rotation.y)) * -1.0f * offsetZ;
-      position.z += cos(toRadians(rotation.y)) * offsetZ;
-    }
-    if (offsetX != 0) {
-      position.x += cos(toRadians(rotation.y)) * offsetX;
-      position.z += sin(toRadians(rotation.y)) * offsetX;
-    }
-
-    position.y += offsetY;
-  }
-
   public void forward() {
-    move(0, 0, -step());
+    position.add(target.mul(speed, DEST));
   }
 
   public void backward() {
-    move(0, 0, step());
+    position.sub(target.mul(speed, DEST));
   }
 
   public void toLeft() {
-    move(-step(), 0, 0);
+    position.sub(right.mul(speed, DEST));
   }
 
   public void toRight() {
-    move(step(), 0, 0);
+    position.add(right.mul(speed, DEST));
   }
 
-  private float step() {
-    return speed;
+  public void toUp() {
+    position.add(up.mul(speed, DEST));
+  }
+
+  public void toDown() {
+    position.sub(up.mul(speed, DEST));
   }
 
   public void rotate(double pitch, double yaw) {
@@ -163,5 +184,16 @@ public class Camera {
     if (rotation.x < -89.0f) {
       rotation.x = -89.0f;
     }
+    updateCameraVectors();
+  }
+
+  private void updateCameraVectors() {
+    target.x = cos(toRadians(rotation.y)) * cos(toRadians(rotation.x));
+    target.y = sin(toRadians(rotation.x));
+    target.z = sin(toRadians(rotation.y)) * cos(toRadians(rotation.x));
+    target.normalize();
+
+    target.cross(worldUp, right).normalize();
+    right.cross(target, up).normalize();
   }
 }

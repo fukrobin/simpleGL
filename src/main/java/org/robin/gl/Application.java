@@ -6,24 +6,20 @@ import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
 import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_D;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_UP;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_X;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_Z;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
 import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
-import static org.lwjgl.glfw.GLFW.GLFW_REPEAT;
 import static org.lwjgl.glfw.GLFW.GLFW_RESIZABLE;
 import static org.lwjgl.glfw.GLFW.GLFW_TRUE;
 import static org.lwjgl.glfw.GLFW.GLFW_VISIBLE;
 import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
 import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
 import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
+import static org.lwjgl.glfw.GLFW.glfwGetKey;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
 import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
@@ -55,8 +51,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
@@ -81,35 +75,30 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
-  private static final List<Vector3f> positions = new ArrayList<>() {
-    {
-      add(new Vector3f(0.0f, 0.0f, 0.0f));
-      add(new Vector3f(2.0f, 5.0f, -15.0f));
-      add(new Vector3f(-1.5f, -2.2f, -2.5f));
-      add(new Vector3f(-3.8f, -2.0f, -12.3f));
-      add(new Vector3f(2.4f, -0.4f, -3.5f));
-      add(new Vector3f(-1.7f, 3.0f, -7.5f));
-      add(new Vector3f(1.3f, -2.0f, -2.5f));
-      add(new Vector3f(1.5f, 2.0f, -2.5f));
-      add(new Vector3f(1.5f, 0.2f, -1.5f));
-      add(new Vector3f(-1.3f, 1.0f, -1.5f));
-    }
-  };
+  private final Vector3f cameraInc = new Vector3f();
+
   private final Matrix4f projectionMatrix;
   private final Camera camera;
   private final AtomicBoolean firstCursor = new AtomicBoolean(true);
-  // The window handle
+
   private long window;
   private int width;
   private int height;
-  private int texture1;
-  private int texture2;
+
   private double lastCursorPosX;
   private double lastCursorPosY;
   private float lastFrameTime;
-  private int vao;
+
+  private int boxVao;
+  private int lightVao;
   private int vbo;
-  private ShaderProgram shaderProgram;
+
+
+  private final Vector3f objectColor = new Vector3f(1.0f, 0.5f, 0.31f);
+  private final Vector3f lightColor = new Vector3f(1.0f, 0.0f, 1.0f);
+
+  private ShaderProgram boxShader;
+  private ShaderProgram lightShader;
 
   /**
    * 设置 Window 的一些初始值.
@@ -204,10 +193,9 @@ public class Application {
   private void initOpenGL() throws IOException {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
-    glClearColor(1.0f, 1.0f, 1.0f, 0.0f);
+    glClearColor(0.3f, 1.0f, 1.0f, 0.0f);
     setupShader();
     setupVao();
-    createTexture();
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
@@ -225,7 +213,7 @@ public class Application {
         lastCursorPosY = posY;
       }
       double offsetX = posX - lastCursorPosX;
-      double offsetY = posY - lastCursorPosY;
+      double offsetY = lastCursorPosY - posY;
       lastCursorPosX = posX;
       lastCursorPosY = posY;
       camera.rotate(offsetY, offsetX);
@@ -242,60 +230,52 @@ public class Application {
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
         glfwSetWindowShouldClose(window, true);
       }
-      boolean pressed = action == GLFW_PRESS || action == GLFW_REPEAT;
-      if (pressed) {
-        switch (key) {
-          case GLFW_KEY_W:
-          case GLFW_KEY_UP:
-            camera.forward();
-            break;
-          case GLFW_KEY_S:
-          case GLFW_KEY_DOWN:
-            camera.backward();
-            break;
-          case GLFW_KEY_A:
-          case GLFW_KEY_LEFT:
-            camera.toLeft();
-            break;
-          case GLFW_KEY_D:
-          case GLFW_KEY_RIGHT:
-            camera.toRight();
-            break;
-          default:
-        }
-      }
     };
   }
 
   private void setupVao() {
-    vao = glGenVertexArrays();
-    glBindVertexArray(vao);
+    setupBoxVao();
+    setupLightVao();
+  }
+
+  private void setupBoxVao() {
+    boxVao = glGenVertexArrays();
+    glBindVertexArray(boxVao);
 
     vbo = glGenBuffers();
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-//    int ebo = glGenBuffers();
-//    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-
     FloatBuffer vertices = Objects.requireNonNull(Util.loadCsvToFloatBuffer("vertices.csv"));
-    IntBuffer indices = Objects.requireNonNull(Util.loadCsvToIntBuffer("indices.csv"));
-
     glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
-//    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
+
     // position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
     glEnableVertexAttribArray(0);
-    // texture coordinate attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
-    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
+  }
+
+  private void setupLightVao() {
+    lightVao = glGenVertexArrays();
+    glBindVertexArray(lightVao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glEnableVertexAttribArray(0);
+
     glBindVertexArray(0);
   }
 
   private void setupShader() throws IOException {
-    shaderProgram = new ShaderProgram();
-    shaderProgram.createVertexShader(ResourcesUtil.getFileContent("vertexShader.glsl"));
-    shaderProgram.createFragmentShader(ResourcesUtil.getFileContent("fragmentShader.glsl"));
-    shaderProgram.link();
+    boxShader = new ShaderProgram();
+    boxShader.createVertexShader(ResourcesUtil.getFileContent("box.vs.glsl"));
+    boxShader.createFragmentShader(ResourcesUtil.getFileContent("box.fs.glsl"));
+    boxShader.link();
+
+    lightShader = new ShaderProgram();
+    lightShader.createVertexShader(ResourcesUtil.getFileContent("box.vs.glsl"));
+    lightShader.createFragmentShader(ResourcesUtil.getFileContent("light.fs.glsl"));
+    lightShader.link();
   }
 
   private int texture(String imageUrl) {
@@ -327,28 +307,20 @@ public class Application {
   private void render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    shaderProgram.bind();
-    shaderProgram.setUniform("view", camera.getViewMatrix());
-    shaderProgram.setUniform("projection", projectionMatrix);
+    boxShader.bind();
+    Matrix4f viewMatrix = camera.getViewMatrix();
+    boxShader.setUniform("view", viewMatrix);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture1);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, texture2);
+    glBindVertexArray(boxVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glBindVertexArray(vao);
-//    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    lightShader.bind();
+    lightShader.setUniform("view", viewMatrix);
 
-    for (int i = 0; i < 10; i++) {
-      Matrix4f modelMatrix = new Matrix4f();
-      modelMatrix.translate(positions.get(i));
-      modelMatrix.rotate(Math.toRadians(20.0f * i), new Vector3f(1.0f, 0.3f, 0.5f).normalize());
-      shaderProgram.setUniform("model", modelMatrix);
-      glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
+    glBindVertexArray(lightVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
     glBindVertexArray(0);
-    shaderProgram.unbind();
   }
 
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
@@ -356,6 +328,7 @@ public class Application {
     try {
 
       updateProjectionMatrix();
+      initShader();
 
       while (!glfwWindowShouldClose(window)) {
         preFrame();
@@ -367,12 +340,39 @@ public class Application {
         glfwPollEvents();
       }
     } finally {
-      if (shaderProgram != null) {
-        shaderProgram.cleanup();
+      if (boxShader != null) {
+        boxShader.cleanup();
       }
-      glDeleteBuffers(vao);
+      glDeleteBuffers(boxVao);
       glDeleteBuffers(vbo);
     }
+  }
+
+  private void initShader() {
+    boxShader.bind();
+    boxShader.setUniform("objectColor", objectColor);
+    boxShader.setUniform("lightColor", lightColor);
+    Matrix4f modelMatrix = new Matrix4f();
+    boxShader.setUniform("model", modelMatrix);
+
+    glBindVertexArray(boxVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    lightShader.bind();
+    modelMatrix.identity().translate(1.2f, 1.0f, 2.0f).scale(0.2f);
+    lightShader.setUniform("model", modelMatrix);
+    lightShader.setUniform("lightColor", lightColor);
+  }
+
+  private void updateProjectionMatrix() {
+    projectionMatrix.setPerspective(Math.toRadians(45.0f), (float) width / (float) height, 0.1f,
+        100f);
+
+    boxShader.bind();
+    boxShader.setUniform("projection", projectionMatrix);
+
+    lightShader.bind();
+    lightShader.setUniform("projection", projectionMatrix);
   }
 
   protected void preFrame() {
@@ -380,23 +380,31 @@ public class Application {
     float deltaTime = currentFrameTime - lastFrameTime;
     lastFrameTime = currentFrameTime;
     camera.setSpeed(2.5f * deltaTime);
+
+    cameraInc.set(0);
+    if (isKeyPressed(GLFW_KEY_W)) {
+      camera.forward();
+    } else if (isKeyPressed(GLFW_KEY_S)) {
+      camera.backward();
+    }
+    if (isKeyPressed(GLFW_KEY_A)) {
+      camera.toLeft();
+    } else if (isKeyPressed(GLFW_KEY_D)) {
+      camera.toRight();
+    }
+    if (isKeyPressed(GLFW_KEY_Z)) {
+      camera.toUp();
+    } else if (isKeyPressed(GLFW_KEY_X)) {
+      camera.toDown();
+    }
+  }
+
+  public boolean isKeyPressed(int key) {
+    return glfwGetKey(window, key) == GLFW_PRESS;
   }
 
   protected void postFrame() {
 
-  }
-
-  private void updateProjectionMatrix() {
-    projectionMatrix.setPerspective(Math.toRadians(45.0f), (float) width / (float) height, 0.1f,
-        100f);
-  }
-
-  private void createTexture() {
-    texture1 = texture("D:\\projects\\java\\simpleGL\\src\\main\\resources\\R-C.jfif");
-    texture2 = texture("D:\\projects\\java\\simpleGL\\src\\main\\resources\\2.jpg");
-    shaderProgram.bind();
-    shaderProgram.setUniform("texture1", 0);
-    shaderProgram.setUniform("texture2", 1);
   }
 
 }
