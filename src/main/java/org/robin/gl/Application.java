@@ -1,8 +1,6 @@
 package org.robin.gl;
 
 import static org.lwjgl.glfw.Callbacks.glfwFreeCallbacks;
-import static org.lwjgl.glfw.GLFW.GLFW_CURSOR;
-import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
 import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_D;
@@ -23,14 +21,12 @@ import static org.lwjgl.glfw.GLFW.glfwGetKey;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
 import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
-import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
 import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
 import static org.lwjgl.glfw.GLFW.glfwPollEvents;
 import static org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetFramebufferSizeCallback;
-import static org.lwjgl.glfw.GLFW.glfwSetInputMode;
 import static org.lwjgl.glfw.GLFW.glfwSetKeyCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowPos;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose;
@@ -47,10 +43,15 @@ import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
+import imgui.ImGui;
+import imgui.gl3.ImGuiImplGl3;
+import imgui.glfw.ImGuiImplGlfw;
+import imgui.type.ImString;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
@@ -95,10 +96,21 @@ public class Application {
 
 
   private final Vector3f objectColor = new Vector3f(1.0f, 0.5f, 0.31f);
-  private final Vector3f lightColor = new Vector3f(1.0f, 0.0f, 1.0f);
+  private final Vector3f lightColor = new Vector3f(1.0f, 1.0f, 1.0f);
+  private final Vector3f lightPos = new Vector3f(1.2f, 1.0f, 2.0f);
+  private final Vector3f clearColor = new Vector3f();
 
   private ShaderProgram boxShader;
   private ShaderProgram lightShader;
+
+  //////////////////////////////////////////////////
+  // ImGui
+  //////////////////////////////////////////////////
+
+  private final float[] values = new float[1];
+
+  private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
+  private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
 
   /**
    * 设置 Window 的一些初始值.
@@ -139,6 +151,7 @@ public class Application {
   private void init() throws Exception {
     initGLFW();
     initOpenGL();
+    initImGui();
 
     // Make the window visible
     glfwShowWindow(window);
@@ -167,13 +180,21 @@ public class Application {
     glfwSetWindowSizeCallback(window, windowSizeCallback());
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback());
 
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+//    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(window, cursorPosCallback());
 
     centerWindow();
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
+  }
+
+  private void initImGui() {
+    ImGui.createContext();
+    ImGui.styleColorsDark();
+    ImGui.getIO();
+    imGuiImplGlfw.init(window, true);
+    imGuiImplGl3.init("#version 330 core");
   }
 
   /**
@@ -193,7 +214,7 @@ public class Application {
   private void initOpenGL() throws IOException {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.3f, 1.0f, 1.0f, 0.0f);
+    glClearColor(clearColor.x, clearColor.y, clearColor.z, 1);
     setupShader();
     setupVao();
   }
@@ -249,8 +270,11 @@ public class Application {
     glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
 
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 24, 0);
     glEnableVertexAttribArray(0);
+    // normal 法线
+    glVertexAttribPointer(1, 3, GL_FLOAT, false, 24, 12);
+    glEnableVertexAttribArray(1);
 
     glBindVertexArray(0);
   }
@@ -260,7 +284,7 @@ public class Application {
     glBindVertexArray(lightVao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 24, 0);
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
@@ -273,7 +297,7 @@ public class Application {
     boxShader.link();
 
     lightShader = new ShaderProgram();
-    lightShader.createVertexShader(ResourcesUtil.getFileContent("box.vs.glsl"));
+    lightShader.createVertexShader(ResourcesUtil.getFileContent("light.vs.glsl"));
     lightShader.createFragmentShader(ResourcesUtil.getFileContent("light.fs.glsl"));
     lightShader.link();
   }
@@ -310,6 +334,7 @@ public class Application {
     boxShader.bind();
     Matrix4f viewMatrix = camera.getViewMatrix();
     boxShader.setUniform("view", viewMatrix);
+    boxShader.setUniform("viewPos", camera.getPosition());
 
     glBindVertexArray(boxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -334,12 +359,16 @@ public class Application {
         preFrame();
 
         render();
+        renderImGui();
 
         postFrame();
         glfwSwapBuffers(window);
         glfwPollEvents();
       }
     } finally {
+      imGuiImplGl3.dispose();
+      imGuiImplGlfw.dispose();
+      ImGui.destroyContext();
       if (boxShader != null) {
         boxShader.cleanup();
       }
@@ -348,18 +377,40 @@ public class Application {
     }
   }
 
+  private void renderImGui() {
+    imGuiImplGlfw.newFrame();
+    ImGui.newFrame();
+    // ImGui.showDemoWindow();
+
+    ImGui.begin("Hello, world!");
+    ImGui.text("Hello, world");
+    if (ImGui.button("Save")) {
+      System.out.println("Save button clicked");
+    }
+    ImGui.inputText("string", new ImString());
+
+    if (ImGui.sliderFloat("float", values, 0.0f, 1.0f)) {
+      System.out.println(Arrays.toString(values));
+    }
+    ImGui.end();
+
+    ImGui.render();
+    imGuiImplGl3.renderDrawData(ImGui.getDrawData());
+  }
+
   private void initShader() {
     boxShader.bind();
     boxShader.setUniform("objectColor", objectColor);
     boxShader.setUniform("lightColor", lightColor);
     Matrix4f modelMatrix = new Matrix4f();
     boxShader.setUniform("model", modelMatrix);
+    boxShader.setUniform("lightPos", lightPos);
 
     glBindVertexArray(boxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
     lightShader.bind();
-    modelMatrix.identity().translate(1.2f, 1.0f, 2.0f).scale(0.2f);
+    modelMatrix.identity().translate(lightPos).scale(0.2f);
     lightShader.setUniform("model", modelMatrix);
     lightShader.setUniform("lightColor", lightColor);
   }

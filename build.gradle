@@ -13,6 +13,7 @@ project.ext {
     jomlVersion = "1.10.2"
     lwjglNatives = "natives-windows"
     COMMONS_CSV_VERSION = "1.9.0"
+    imguiVersion = '1.86.2'
 }
 
 dependencies {
@@ -27,6 +28,11 @@ dependencies {
     runtimeOnly "org.lwjgl:lwjgl-opengl::$lwjglNatives"
     runtimeOnly "org.lwjgl:lwjgl-stb::$lwjglNatives"
     implementation "org.joml:joml:${jomlVersion}"
+
+    implementation "io.github.spair:imgui-java-binding:$imguiVersion"
+    implementation "io.github.spair:imgui-java-lwjgl3:$imguiVersion"
+
+    runtimeOnly "io.github.spair:imgui-java-natives-windows:$imguiVersion"
 
     implementation "org.apache.commons:commons-csv:${project.COMMONS_CSV_VERSION}"
 
