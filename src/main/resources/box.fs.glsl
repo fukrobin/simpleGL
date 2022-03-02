@@ -12,10 +12,15 @@ uniform vec3 lightColor;
 uniform vec3 lightPos;
 // 观察者的位置，即摄像机的位置
 uniform vec3 viewPos;
+// 反光度
+uniform int shininess;
+// 环境光强度
+uniform float ambientStrength;
+// 反光强度
+uniform float specularStrength;
 
 void main() {
     // 环境光照
-    float ambientStrength = 0.1;
     vec3 ambient = ambientStrength * lightColor;
 
     // 漫反射光照
@@ -24,10 +29,9 @@ void main() {
     vec3 diffuse = max(dot(norm, lightDir), 0.0) * lightColor;
 
     // 镜面光照
-    float specularStrength = 0.5;
     vec3 viewDir = normalize(viewPos - FragPos);
     vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 //    float spec = max(dot(viewDir, reflectDir), 0.0);
     vec3 specular = specularStrength * spec * lightColor;
 

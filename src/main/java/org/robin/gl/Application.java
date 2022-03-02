@@ -1,10 +1,14 @@
 package org.robin.gl;
 
 import static org.lwjgl.glfw.Callbacks.glfwFreeCallbacks;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL;
 import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_D;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_ALT;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_X;
@@ -24,10 +28,13 @@ import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
 import static org.lwjgl.glfw.GLFW.glfwInit;
 import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
 import static org.lwjgl.glfw.GLFW.glfwPollEvents;
+import static org.lwjgl.glfw.GLFW.glfwSetCursorPos;
 import static org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetFramebufferSizeCallback;
+import static org.lwjgl.glfw.GLFW.glfwSetInputMode;
 import static org.lwjgl.glfw.GLFW.glfwSetKeyCallback;
+import static org.lwjgl.glfw.GLFW.glfwSetMouseButtonCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowPos;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowSizeCallback;
@@ -44,6 +51,9 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 import imgui.ImGui;
+import imgui.flag.ImGuiCond;
+import imgui.flag.ImGuiConfigFlags;
+import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import imgui.type.ImString;
@@ -51,17 +61,18 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.Version;
+import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWCursorPosCallbackI;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI;
 import org.lwjgl.glfw.GLFWKeyCallbackI;
+import org.lwjgl.glfw.GLFWMouseButtonCallbackI;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
 import org.lwjgl.opengl.*;
@@ -76,16 +87,15 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
-  private final Vector3f cameraInc = new Vector3f();
-
   private final Matrix4f projectionMatrix;
   private final Camera camera;
-  private final AtomicBoolean firstCursor = new AtomicBoolean(true);
 
   private long window;
   private int width;
   private int height;
 
+  private final AtomicBoolean firstCursor = new AtomicBoolean(true);
+  private final AtomicBoolean cursorHidden = new AtomicBoolean(true);
   private double lastCursorPosX;
   private double lastCursorPosY;
   private float lastFrameTime;
@@ -95,9 +105,10 @@ public class Application {
   private int vbo;
 
 
+  private final float[] lightColorFloats = new float[]{0, 150, 0, 0};
   private final Vector3f objectColor = new Vector3f(1.0f, 0.5f, 0.31f);
   private final Vector3f lightColor = new Vector3f(1.0f, 1.0f, 1.0f);
-  private final Vector3f lightPos = new Vector3f(1.2f, 1.0f, 2.0f);
+  private final Vector3f lightPos = new Vector3f(-1.2f, 1.0f, -2.0f);
   private final Vector3f clearColor = new Vector3f();
 
   private ShaderProgram boxShader;
@@ -107,7 +118,9 @@ public class Application {
   // ImGui
   //////////////////////////////////////////////////
 
-  private final float[] values = new float[1];
+  private final int[] shininessInt = new int[]{32};
+  private final float[] ambientStrength = new float[]{0.1f};
+  private final float[] specularStrength = new float[]{0.5f};
 
   private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
   private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
@@ -118,9 +131,9 @@ public class Application {
   public Application() {
     projectionMatrix = new Matrix4f();
 
-    width = 800;
+    width = 1000;
     height = 600;
-    camera = new Camera(new Vector3f(0, 0, 3));
+    camera = new Camera(new Vector3f(0.8f, 1, 1.8f));
   }
 
   public static void main(String[] args) {
@@ -180,8 +193,9 @@ public class Application {
     glfwSetWindowSizeCallback(window, windowSizeCallback());
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback());
 
-//    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    disableCursor();
     glfwSetCursorPosCallback(window, cursorPosCallback());
+    glfwSetMouseButtonCallback(window, mouseButtonCallback());
 
     centerWindow();
 
@@ -214,7 +228,7 @@ public class Application {
   private void initOpenGL() throws IOException {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
-    glClearColor(clearColor.x, clearColor.y, clearColor.z, 1);
+    
     setupShader();
     setupVao();
   }
@@ -229,6 +243,10 @@ public class Application {
 
   private GLFWCursorPosCallbackI cursorPosCallback() {
     return (window1, posX, posY) -> {
+      if (!cursorHidden.get()) {
+        return;
+      }
+
       if (firstCursor.getAndSet(false)) {
         lastCursorPosX = posX;
         lastCursorPosY = posY;
@@ -241,15 +259,33 @@ public class Application {
     };
   }
 
+  private GLFWMouseButtonCallbackI mouseButtonCallback() {
+    return (window1, button, action, mods) -> {
+
+    };
+  }
+
+  public void disableCursor() {
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  }
+
   private GLFWFramebufferSizeCallbackI framebufferSizeCallback() {
     return (window1, sizeX, sizeY) -> glViewport(0, 0, sizeX, sizeY);
   }
 
   private GLFWKeyCallbackI keyCallback() {
     return (window1, key, scancode, action, mods) -> {
-
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
         glfwSetWindowShouldClose(window, true);
+      }
+      if (key == GLFW_KEY_LEFT_ALT && action == GLFW_RELEASE) {
+        if (cursorHidden.getAndSet(false)) {
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+          disableCursor();
+          glfwSetCursorPos(window, lastCursorPosX, lastCursorPosY);
+          cursorHidden.set(true);
+        }
       }
     };
   }
@@ -328,26 +364,6 @@ public class Application {
     }
   }
 
-  private void render() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    boxShader.bind();
-    Matrix4f viewMatrix = camera.getViewMatrix();
-    boxShader.setUniform("view", viewMatrix);
-    boxShader.setUniform("viewPos", camera.getPosition());
-
-    glBindVertexArray(boxVao);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    lightShader.bind();
-    lightShader.setUniform("view", viewMatrix);
-
-    glBindVertexArray(lightVao);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    glBindVertexArray(0);
-  }
-
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
   private void loop() {
     try {
@@ -377,25 +393,69 @@ public class Application {
     }
   }
 
+  //////////////////////////////////////////////////
+  // Render
+  //////////////////////////////////////////////////
+
+  private void render() {
+    boxShader.bind();
+    Matrix4f viewMatrix = camera.getViewMatrix();
+    boxShader.setUniform("view", viewMatrix);
+    boxShader.setUniform("viewPos", camera.getPosition());
+    boxShader.setUniform("lightColor", lightColor);
+    boxShader.setUniform("shininess", shininessInt[0]);
+    boxShader.setUniform("ambientStrength", ambientStrength[0]);
+    boxShader.setUniform("specularStrength", specularStrength[0]);
+
+    glBindVertexArray(boxVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    lightShader.bind();
+    lightShader.setUniform("view", viewMatrix);
+    lightShader.setUniform("lightColor", lightColor);
+
+    glBindVertexArray(lightVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    glBindVertexArray(0);
+  }
+
   private void renderImGui() {
     imGuiImplGlfw.newFrame();
     ImGui.newFrame();
     // ImGui.showDemoWindow();
 
-    ImGui.begin("Hello, world!");
-    ImGui.text("Hello, world");
-    if (ImGui.button("Save")) {
-      System.out.println("Save button clicked");
-    }
-    ImGui.inputText("string", new ImString());
-
-    if (ImGui.sliderFloat("float", values, 0.0f, 1.0f)) {
-      System.out.println(Arrays.toString(values));
-    }
-    ImGui.end();
+    renderAttributeEditor();
 
     ImGui.render();
     imGuiImplGl3.renderDrawData(ImGui.getDrawData());
+
+    if (ImGui.getIO().hasConfigFlags(ImGuiConfigFlags.ViewportsEnable)) {
+      final long backupWindowPtr = GLFW.glfwGetCurrentContext();
+      ImGui.updatePlatformWindows();
+      ImGui.renderPlatformWindowsDefault();
+      GLFW.glfwMakeContextCurrent(backupWindowPtr);
+    }
+  }
+
+  private void renderAttributeEditor() {
+    ImGui.setNextWindowSize(350, 200, ImGuiCond.Once);
+    ImGui.setNextWindowPos(width - 360, 10, ImGuiCond.Once);
+    ImGui.begin("Attribute Editor");
+
+    Vector3f pos = camera.getPosition();
+    ImGui.labelText("Camera position",
+        String.format("x: %.1f, y: %.1f, z: %.1f", pos.x, pos.y, pos.z));
+
+    ImGui.sliderInt("shininess", shininessInt, 0, 64);
+    ImGui.sliderFloat("ambientStrength", ambientStrength, 0, 1.0f);
+    ImGui.sliderFloat("specularStrength", specularStrength, 0, 1.0f);
+    ImGui.separator();
+    ImGui.text("Extra");
+    if (ImGui.colorEdit3("Light Color", lightColorFloats)) {
+      lightColor.set(lightColorFloats);
+    }
+    ImGui.end();
   }
 
   private void initShader() {
@@ -427,12 +487,14 @@ public class Application {
   }
 
   protected void preFrame() {
+    glClearColor(clearColor.x, clearColor.y, clearColor.z, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     float currentFrameTime = (float) glfwGetTime();
     float deltaTime = currentFrameTime - lastFrameTime;
     lastFrameTime = currentFrameTime;
     camera.setSpeed(2.5f * deltaTime);
 
-    cameraInc.set(0);
     if (isKeyPressed(GLFW_KEY_W)) {
       camera.forward();
     } else if (isKeyPressed(GLFW_KEY_S)) {
