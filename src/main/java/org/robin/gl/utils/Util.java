@@ -8,9 +8,11 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Vector;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.joml.Vector3f;
 import org.lwjgl.BufferUtils;
 
 /**
@@ -80,4 +82,8 @@ public class Util {
     return Util.class.getClassLoader().getResourceAsStream(filename);
   }
 
+
+  public static String stringVectors(Vector3f vector3f) {
+    return String.format("x: %.1f, y: %.1f, z: %.1f", vector3f.x, vector3f.y, vector3f.z);
+  }
 }

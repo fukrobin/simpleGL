@@ -72,7 +72,7 @@ public class Camera {
    * @param position 摄像机的初始位置.
    */
   public Camera(Vector3f position) {
-    this(position, new Vector3f(0, 1, 0), new Vector3f(0, 0, -1), new Vector3f(0, -90, 0));
+    this(position, new Vector3f(0, 1, 0), new Vector3f(0, -90, 0));
   }
 
   /**
@@ -81,10 +81,10 @@ public class Camera {
    * @param position 摄像机的初始位置
    * @param rotation 摄像机的初始旋转
    */
-  public Camera(Vector3f position, Vector3f up, Vector3f target, Vector3f rotation) {
+  public Camera(Vector3f position, Vector3f up, Vector3f rotation) {
     this.position = position;
 
-    this.target = target;
+    this.target = new Vector3f();
     this.worldUp = up;
     this.up = new Vector3f();
     this.right = new Vector3f();

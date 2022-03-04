@@ -49,14 +49,13 @@ import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.robin.gl.utils.Util.stringVectors;
 
 import imgui.ImGui;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiConfigFlags;
-import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
-import imgui.type.ImString;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -87,6 +86,8 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
+  private static final Vector3f DEST = new Vector3f();
+
   private final Matrix4f projectionMatrix;
   private final Camera camera;
 
@@ -94,33 +95,49 @@ public class Application {
   private int width;
   private int height;
 
+  private final Vector3f clearColor = new Vector3f();
+
+  //////////////////////////////////////////////////
+  // Cursor
+  //////////////////////////////////////////////////
+
   private final AtomicBoolean firstCursor = new AtomicBoolean(true);
   private final AtomicBoolean cursorHidden = new AtomicBoolean(true);
   private double lastCursorPosX;
   private double lastCursorPosY;
   private float lastFrameTime;
 
+  //////////////////////////////////////////////////
+  // Shader
+  //////////////////////////////////////////////////
+
   private int boxVao;
   private int lightVao;
   private int vbo;
-
-
-  private final float[] lightColorFloats = new float[]{0, 150, 0, 0};
-  private final Vector3f objectColor = new Vector3f(1.0f, 0.5f, 0.31f);
-  private final Vector3f lightColor = new Vector3f(1.0f, 1.0f, 1.0f);
-  private final Vector3f lightPos = new Vector3f(-1.2f, 1.0f, -2.0f);
-  private final Vector3f clearColor = new Vector3f();
 
   private ShaderProgram boxShader;
   private ShaderProgram lightShader;
 
   //////////////////////////////////////////////////
-  // ImGui
+  // light
   //////////////////////////////////////////////////
 
-  private final int[] shininessInt = new int[]{32};
-  private final float[] ambientStrength = new float[]{0.1f};
-  private final float[] specularStrength = new float[]{0.5f};
+  private final float[] lightColorFloats = new float[]{0, 0, 0, 0};
+  private final Vector3f lightColor = new Vector3f(1.0f, 1.0f, 1.0f);
+  private final Vector3f lightPos = new Vector3f(1.2f, 1.0f, 2.0f);
+  private final Vector3f lightAmbient = new Vector3f(0.2f);
+  private final Vector3f lightDiffuse = new Vector3f(0.5f);
+  private final Vector3f lightSpecular = new Vector3f(1.0f);
+
+  //////////////////////////////////////////////////
+  // Material
+  //////////////////////////////////////////////////
+
+  private final Material material;
+  private final float[] materialShininess = new float[]{0.25f};
+  private final float[] materialAmbient = new float[]{0.0f, 0.1f, 0.06f};
+  private final float[] materialDiffuse = new float[]{0.0f, 0.50980392f, 0.50980392f};
+  private final float[] materialSpecular = new float[]{0.0f, 0.50980392f, 0.50980392f};
 
   private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
   private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
@@ -133,7 +150,14 @@ public class Application {
 
     width = 1000;
     height = 600;
-    camera = new Camera(new Vector3f(0.8f, 1, 1.8f));
+    camera = new Camera(new Vector3f(-1.6f, -1.0f, 2.4f),
+        new Vector3f(0, 1, 0),
+        new Vector3f(16.6f, -45.5f, 0));
+
+    material = new Material();
+    material.setAmbient(materialAmbient);
+    material.setSpecular(materialSpecular);
+    material.setDiffuse(materialDiffuse);
   }
 
   public static void main(String[] args) {
@@ -228,7 +252,7 @@ public class Application {
   private void initOpenGL() throws IOException {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
-    
+
     setupShader();
     setupVao();
   }
@@ -403,9 +427,14 @@ public class Application {
     boxShader.setUniform("view", viewMatrix);
     boxShader.setUniform("viewPos", camera.getPosition());
     boxShader.setUniform("lightColor", lightColor);
-    boxShader.setUniform("shininess", shininessInt[0]);
-    boxShader.setUniform("ambientStrength", ambientStrength[0]);
-    boxShader.setUniform("specularStrength", specularStrength[0]);
+    boxShader.setUniform("material.shininess", materialShininess[0]);
+    boxShader.setUniform("material.ambient", material.getAmbient());
+    boxShader.setUniform("material.diffuse", material.getDiffuse());
+    boxShader.setUniform("material.specular", material.getSpecular());
+
+    boxShader.setUniform("light.ambient", DEST.set(lightAmbient));
+    boxShader.setUniform("light.diffuse", DEST.set(lightDiffuse));
+    boxShader.setUniform("light.specular", DEST.set(lightSpecular));
 
     glBindVertexArray(boxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -439,32 +468,49 @@ public class Application {
   }
 
   private void renderAttributeEditor() {
-    ImGui.setNextWindowSize(350, 200, ImGuiCond.Once);
+    ImGui.setNextWindowSize(350, 400, ImGuiCond.Once);
     ImGui.setNextWindowPos(width - 360, 10, ImGuiCond.Once);
     ImGui.begin("Attribute Editor");
 
-    Vector3f pos = camera.getPosition();
-    ImGui.labelText("Camera position",
-        String.format("x: %.1f, y: %.1f, z: %.1f", pos.x, pos.y, pos.z));
+    ImGui.labelText("Camera position", stringVectors(camera.getPosition()));
+    ImGui.labelText("Camera rotation", stringVectors(camera.getRotation()));
 
-    ImGui.sliderInt("shininess", shininessInt, 0, 64);
-    ImGui.sliderFloat("ambientStrength", ambientStrength, 0, 1.0f);
-    ImGui.sliderFloat("specularStrength", specularStrength, 0, 1.0f);
+    ImGui.text("Materials");
+    ImGui.sliderFloat("shininess", materialShininess, 0, 1);
+    if (ImGui.colorEdit3("Material ambient", materialAmbient)) {
+      material.setAmbient(materialAmbient);
+    }
+    if (ImGui.colorEdit3("Material diffuse", materialDiffuse)) {
+      material.setDiffuse(materialDiffuse);
+    }
+    if (ImGui.colorEdit3("Material specular", materialSpecular)) {
+      material.setSpecular(materialSpecular);
+    }
+
     ImGui.separator();
     ImGui.text("Extra");
+    ImGui.labelText("lightAmbient", stringVectors(lightAmbient));
+    ImGui.labelText("lightDiffuse", stringVectors(lightDiffuse));
     if (ImGui.colorEdit3("Light Color", lightColorFloats)) {
       lightColor.set(lightColorFloats);
+      lightColor.mul(0.5f, lightDiffuse);
+      lightColor.mul(0.2f, lightAmbient);
     }
     ImGui.end();
   }
 
   private void initShader() {
     boxShader.bind();
-    boxShader.setUniform("objectColor", objectColor);
-    boxShader.setUniform("lightColor", lightColor);
     Matrix4f modelMatrix = new Matrix4f();
     boxShader.setUniform("model", modelMatrix);
-    boxShader.setUniform("lightPos", lightPos);
+    boxShader.setUniform("light.position", lightPos);
+    boxShader.setUniform("light.ambient", lightAmbient);
+    boxShader.setUniform("light.diffuse", lightDiffuse);
+    boxShader.setUniform("light.specular", lightSpecular);
+    boxShader.setUniform("material.shininess", materialShininess[0]);
+    boxShader.setUniform("material.ambient", material.getAmbient());
+    boxShader.setUniform("material.diffuse", material.getDiffuse());
+    boxShader.setUniform("material.specular", material.getSpecular());
 
     glBindVertexArray(boxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
