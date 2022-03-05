@@ -13,6 +13,7 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_X;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_Z;
+import static org.lwjgl.glfw.GLFW.GLFW_MAXIMIZED;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
 import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
 import static org.lwjgl.glfw.GLFW.GLFW_RESIZABLE;
@@ -25,6 +26,7 @@ import static org.lwjgl.glfw.GLFW.glfwGetKey;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
 import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
+import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
 import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
 import static org.lwjgl.glfw.GLFW.glfwPollEvents;
@@ -80,6 +82,7 @@ import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import java.io.IOException;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
@@ -95,6 +98,7 @@ import org.lwjgl.glfw.GLFWMouseButtonCallbackI;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.system.MemoryStack;
 import org.robin.gl.utils.Util;
 
 /**
@@ -104,7 +108,8 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
-  private static final Vector3f DEST = new Vector3f();
+  private static final Vector3f DEST_VECTOR = new Vector3f();
+  private static final Matrix4f DEST_MATRIX = new Matrix4f();
 
   private final Matrix4f projectionMatrix;
   private final Camera camera;
@@ -114,6 +119,19 @@ public class Application {
   private int height;
 
   private final Vector3f clearColor = new Vector3f(0.1f);
+
+  Vector3f[] cubePositions = new Vector3f[]{
+      new Vector3f(0.0f, 0.0f, 0.0f),
+      new Vector3f(2.0f, 5.0f, -15.0f),
+      new Vector3f(-1.5f, -2.2f, -2.5f),
+      new Vector3f(-3.8f, -2.0f, -12.3f),
+      new Vector3f(2.4f, -0.4f, -3.5f),
+      new Vector3f(-1.7f, 3.0f, -7.5f),
+      new Vector3f(1.3f, -2.0f, -2.5f),
+      new Vector3f(1.5f, 2.0f, -2.5f),
+      new Vector3f(1.5f, 0.2f, -1.5f),
+      new Vector3f(-1.3f, 1.0f, -1.5f)
+  };
 
   //////////////////////////////////////////////////
   // Cursor
@@ -134,18 +152,19 @@ public class Application {
   private int vbo;
 
   private ShaderProgram boxShader;
-  private ShaderProgram lightShader;
+  private ShaderProgram parallelLightShader;
+  private ShaderProgram pointLightShader;
 
   //////////////////////////////////////////////////
   // light
   //////////////////////////////////////////////////
 
-  private final float[] lightColorFloats = new float[]{1.0f, 1.0f, 1.0f};
-  private final Vector3f lightColor = new Vector3f(lightColorFloats);
-  private final Vector3f lightPos = new Vector3f(1.2f, 1.0f, 2.0f);
-  private final Vector3f lightAmbient = new Vector3f(0.2f);
-  private final Vector3f lightDiffuse = new Vector3f(0.5f);
-  private final Vector3f lightSpecular = new Vector3f(1.0f);
+  private final Light parallelLight;
+  private final Light pointLight;
+  private final Light spotLight;
+
+  private final float[] pointLightQuadratic = new float[]{0.0019f};
+  private final float[] pointLightLiner = new float[]{0.022f};
 
   //////////////////////////////////////////////////
   // Material
@@ -172,9 +191,13 @@ public class Application {
 
     width = 1000;
     height = 600;
-    camera = new Camera(new Vector3f(-1.6f, -1.0f, 2.4f),
+    camera = new Camera(new Vector3f(0, 0, 3),
         new Vector3f(0, 1, 0),
-        new Vector3f(16.6f, -45.5f, 0));
+        new Vector3f(0, -90, 0));
+
+    parallelLight = new Light();
+    pointLight = new Light();
+    spotLight = new Light();
   }
 
   public static void main(String[] args) {
@@ -225,6 +248,7 @@ public class Application {
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
     window = glfwCreateWindow(width, height, "Hello World!", NULL, NULL);
     if (window == NULL) {
@@ -239,7 +263,13 @@ public class Application {
     glfwSetCursorPosCallback(window, cursorPosCallback());
     glfwSetMouseButtonCallback(window, mouseButtonCallback());
 
-    centerWindow();
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      IntBuffer widthBuffer = stack.mallocInt(1);
+      IntBuffer heightBuffer = stack.mallocInt(1);
+      glfwGetWindowSize(window, widthBuffer, heightBuffer);
+      width = widthBuffer.get(0);
+      height = heightBuffer.get(0);
+    }
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
@@ -277,7 +307,7 @@ public class Application {
 
   private void initLightMap() {
     diffuseMap = texture2D("texture/box_diffuse_map.png");
-    specularMap = texture2D("texture/box_colorful_specular_map.png");
+    specularMap = texture2D("texture/box_specular_map.png");
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
@@ -382,10 +412,34 @@ public class Application {
     boxShader.createFragmentShader(ResourcesUtil.getFileContent("shader/box.fs.glsl"));
     boxShader.link();
 
-    lightShader = new ShaderProgram();
-    lightShader.createVertexShader(ResourcesUtil.getFileContent("shader/light.vs.glsl"));
-    lightShader.createFragmentShader(ResourcesUtil.getFileContent("shader/light.fs.glsl"));
-    lightShader.link();
+    parallelLightShader = new ShaderProgram();
+    parallelLightShader.createVertexShader(
+        ResourcesUtil.getFileContent("shader/parallelLight.vs.glsl"));
+    parallelLightShader.createFragmentShader(
+        ResourcesUtil.getFileContent("shader/parallelLight.fs.glsl"));
+    parallelLightShader.link();
+
+    pointLightShader = new ShaderProgram();
+    pointLightShader.createVertexShader(ResourcesUtil.getFileContent("shader/pointLight.vs.glsl"));
+    pointLightShader.createFragmentShader(
+        ResourcesUtil.getFileContent("shader/pointLight.fs.glsl"));
+    pointLightShader.link();
+  }
+
+  private void initShader() {
+    boxShader.bind();
+    Matrix4f modelMatrix = new Matrix4f();
+    boxShader.setUniform("model", modelMatrix);
+    boxShader.setUniform("parallelLight.directOrPosition", parallelLight.getDirection());
+
+    boxShader.setUniform("pointLight.directOrPosition", DEST_VECTOR.set(1.2f, 1.0f, 2.0f));
+
+    boxShader.setUniform("material.shininess", materialShininess[0]);
+    boxShader.setUniform("material.diffuseMap", 0);
+    boxShader.setUniform("material.specularMap", 1);
+
+    glBindVertexArray(boxVao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
   }
 
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
@@ -421,34 +475,79 @@ public class Application {
   // Render
   //////////////////////////////////////////////////
 
+  private final Matrix4f modelMatrix = new Matrix4f();
+  private final Vector3f axis = new Vector3f(1.0f, 0.3f, 0.5f).normalize();
+
   private void render() {
+    renderIntem();
+
+    renderLight();
+
+    glBindVertexArray(0);
+  }
+
+  /**
+   * 渲染可见的物体.
+   */
+  private void renderIntem() {
     boxShader.bind();
-    Matrix4f viewMatrix = camera.getViewMatrix();
-    boxShader.setUniform("view", viewMatrix);
+    boxShader.setUniform("view", camera.getViewMatrix());
     boxShader.setUniform("viewPos", camera.getPosition());
-    boxShader.setUniform("lightColor", lightColor);
     boxShader.setUniform("material.shininess", materialShininess[0]);
 
-    boxShader.setUniform("light.ambient", DEST.set(lightAmbient));
-    boxShader.setUniform("light.diffuse", DEST.set(lightDiffuse));
-    boxShader.setUniform("light.specular", DEST.set(lightSpecular));
+    boxShader.setUniform("parallelLight.ambient", parallelLight.getAmbient());
+    boxShader.setUniform("parallelLight.diffuse", parallelLight.getDiffuse());
+    boxShader.setUniform("parallelLight.specular", parallelLight.getSpecular());
 
-    glBindVertexArray(boxVao);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    boxShader.setUniform("pointLight.ambient", pointLight.getAmbient());
+    boxShader.setUniform("pointLight.diffuse", pointLight.getDiffuse());
+    boxShader.setUniform("pointLight.specular", pointLight.getSpecular());
+    boxShader.setUniform("pointLight.constant", 1.0f);
+    boxShader.setUniform("pointLight.linear", pointLightLiner[0]);
+    boxShader.setUniform("pointLight.quadratic", pointLightQuadratic[0]);
 
-    lightShader.bind();
-    lightShader.setUniform("view", viewMatrix);
-    lightShader.setUniform("lightColor", lightColor);
+    boxShader.setUniform("spotLight.position", camera.getPosition());
+    boxShader.setUniform("spotLight.direction", camera.getTarget());
+    boxShader.setUniform("spotLight.cutOff", Math.cos(Math.toRadians(12.5f)));
+    boxShader.setUniform("spotLight.outerCutOff", Math.cos(Math.toRadians(17.5f)));
+    boxShader.setUniform("spotLight.ambient", spotLight.getAmbient());
+    boxShader.setUniform("spotLight.diffuse", spotLight.getDiffuse());
+    boxShader.setUniform("spotLight.specular", spotLight.getSpecular());
+    boxShader.setUniform("spotLight.constant", 1.0f);
+    boxShader.setUniform("spotLight.linear", pointLightLiner[0]);
+    boxShader.setUniform("spotLight.quadratic", pointLightQuadratic[0]);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, diffuseMap);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, specularMap);
 
+    glBindVertexArray(boxVao);
+    for (int i = 0, cubePositionsLength = cubePositions.length; i < cubePositionsLength; i++) {
+      Vector3f cubePosition = cubePositions[i];
+      modelMatrix.identity().translate(cubePosition)
+                 .rotate(Math.toRadians(20.0f * i), axis);
+      boxShader.setUniform("model", modelMatrix);
+      glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+  }
+
+  /**
+   * 渲染所有的光源.
+   */
+  private void renderLight() {
     glBindVertexArray(lightVao);
+
+    parallelLightShader.bind();
+    parallelLightShader.setUniform("view", camera.getViewMatrix());
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glBindVertexArray(0);
+    pointLightShader.bind();
+    DEST_MATRIX.identity().translate(1.2f, 1.0f, 2.0f).scale(0.2f);
+    pointLightShader.setUniform("model", DEST_MATRIX);
+    pointLightShader.setUniform("view", camera.getViewMatrix());
+    pointLightShader.setUniform("lightColor", pointLight.getColor());
+    glDrawArrays(GL_TRIANGLES, 0, 36);
   }
 
   private void renderImGui() {
@@ -481,36 +580,23 @@ public class Application {
     ImGui.sliderFloat("shininess", materialShininess, 0, 1);
 
     ImGui.separator();
-    ImGui.text("Extra");
-    ImGui.labelText("lightAmbient", stringVectors(lightAmbient));
-    ImGui.labelText("lightDiffuse", stringVectors(lightDiffuse));
-    if (ImGui.colorEdit3("Light Color", lightColorFloats)) {
-      lightColor.set(lightColorFloats);
-      lightColor.mul(0.5f, lightDiffuse);
-      lightColor.mul(0.2f, lightAmbient);
+    ImGui.text("Light");
+    if (ImGui.colorEdit3("Parallel Light Color", parallelLight.getColorFloats())) {
+      parallelLight.updateColor();
     }
+    if (ImGui.colorEdit3("Point Light Color", pointLight.getColorFloats())) {
+      pointLight.updateColor();
+    }
+    if (ImGui.colorEdit3("Spot Light Color", spotLight.getColorFloats())) {
+      spotLight.updateColor();
+    }
+
+    ImGui.separator();
+    ImGui.text("Point light");
+    ImGui.sliderFloat("liner", pointLightLiner, 0, 0.1f);
+    ImGui.sliderFloat("quadratic", pointLightQuadratic, 0, 0.1f);
+
     ImGui.end();
-  }
-
-  private void initShader() {
-    boxShader.bind();
-    Matrix4f modelMatrix = new Matrix4f();
-    boxShader.setUniform("model", modelMatrix);
-    boxShader.setUniform("light.position", lightPos);
-    boxShader.setUniform("light.ambient", lightAmbient);
-    boxShader.setUniform("light.diffuse", lightDiffuse);
-    boxShader.setUniform("light.specular", lightSpecular);
-    boxShader.setUniform("material.shininess", materialShininess[0]);
-    boxShader.setUniform("material.diffuseMap", 0);
-    boxShader.setUniform("material.specularMap", 1);
-
-    glBindVertexArray(boxVao);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    lightShader.bind();
-    modelMatrix.identity().translate(lightPos).scale(0.2f);
-    lightShader.setUniform("model", modelMatrix);
-    lightShader.setUniform("lightColor", lightColor);
   }
 
   private void updateProjectionMatrix() {
@@ -520,8 +606,11 @@ public class Application {
     boxShader.bind();
     boxShader.setUniform("projection", projectionMatrix);
 
-    lightShader.bind();
-    lightShader.setUniform("projection", projectionMatrix);
+    parallelLightShader.bind();
+    parallelLightShader.setUniform("projection", projectionMatrix);
+
+    pointLightShader.bind();
+    pointLightShader.setUniform("projection", projectionMatrix);
   }
 
   protected void preFrame() {

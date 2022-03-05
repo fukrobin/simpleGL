@@ -136,6 +136,10 @@ public class Camera {
     this.rotateSensitivity = rotateSensitivity;
   }
 
+  public Vector3f getTarget() {
+    return target;
+  }
+
   //////////////////////////////////////////////////
   // Function method
   //////////////////////////////////////////////////
