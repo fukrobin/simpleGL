@@ -44,12 +44,34 @@ import static org.lwjgl.glfw.GLFW.glfwSwapInterval;
 import static org.lwjgl.glfw.GLFW.glfwTerminate;
 import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 import static org.lwjgl.glfw.GLFW.glfwWindowShouldClose;
-import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL15.*;
-import static org.lwjgl.opengl.GL30.*;
-import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
+import static org.lwjgl.opengl.GL11.GL_FLOAT;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+import static org.lwjgl.opengl.GL11.GL_TRIANGLES;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glClear;
+import static org.lwjgl.opengl.GL11.glClearColor;
+import static org.lwjgl.opengl.GL11.glDrawArrays;
+import static org.lwjgl.opengl.GL11.glEnable;
+import static org.lwjgl.opengl.GL11.glViewport;
+import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
+import static org.lwjgl.opengl.GL15.GL_STATIC_DRAW;
+import static org.lwjgl.opengl.GL15.GL_TEXTURE0;
+import static org.lwjgl.opengl.GL15.GL_TEXTURE1;
+import static org.lwjgl.opengl.GL15.glActiveTexture;
+import static org.lwjgl.opengl.GL15.glBindBuffer;
+import static org.lwjgl.opengl.GL15.glBufferData;
+import static org.lwjgl.opengl.GL15.glDeleteBuffers;
+import static org.lwjgl.opengl.GL15.glGenBuffers;
+import static org.lwjgl.opengl.GL30.glBindVertexArray;
+import static org.lwjgl.opengl.GL30.glEnableVertexAttribArray;
+import static org.lwjgl.opengl.GL30.glGenVertexArrays;
+import static org.lwjgl.opengl.GL30.glVertexAttribPointer;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.robin.gl.utils.Util.stringVectors;
+import static org.robin.gl.utils.Util.texture2D;
 
 import imgui.ImGui;
 import imgui.flag.ImGuiCond;
@@ -57,9 +79,7 @@ import imgui.flag.ImGuiConfigFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.joml.Math;
@@ -74,9 +94,7 @@ import org.lwjgl.glfw.GLFWKeyCallbackI;
 import org.lwjgl.glfw.GLFWMouseButtonCallbackI;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
-import org.lwjgl.opengl.*;
-import org.lwjgl.stb.STBImage;
-import org.lwjgl.system.MemoryStack;
+import org.lwjgl.opengl.GL;
 import org.robin.gl.utils.Util;
 
 /**
@@ -95,7 +113,7 @@ public class Application {
   private int width;
   private int height;
 
-  private final Vector3f clearColor = new Vector3f();
+  private final Vector3f clearColor = new Vector3f(0.1f);
 
   //////////////////////////////////////////////////
   // Cursor
@@ -122,8 +140,8 @@ public class Application {
   // light
   //////////////////////////////////////////////////
 
-  private final float[] lightColorFloats = new float[]{0, 0, 0, 0};
-  private final Vector3f lightColor = new Vector3f(1.0f, 1.0f, 1.0f);
+  private final float[] lightColorFloats = new float[]{1.0f, 1.0f, 1.0f};
+  private final Vector3f lightColor = new Vector3f(lightColorFloats);
   private final Vector3f lightPos = new Vector3f(1.2f, 1.0f, 2.0f);
   private final Vector3f lightAmbient = new Vector3f(0.2f);
   private final Vector3f lightDiffuse = new Vector3f(0.5f);
@@ -133,11 +151,15 @@ public class Application {
   // Material
   //////////////////////////////////////////////////
 
-  private final Material material;
-  private final float[] materialShininess = new float[]{0.25f};
-  private final float[] materialAmbient = new float[]{0.0f, 0.1f, 0.06f};
-  private final float[] materialDiffuse = new float[]{0.0f, 0.50980392f, 0.50980392f};
-  private final float[] materialSpecular = new float[]{0.0f, 0.50980392f, 0.50980392f};
+  private final float[] materialShininess = new float[]{0.5f};
+  /**
+   * 漫反射贴图的纹理ID.
+   */
+  private int diffuseMap;
+  /**
+   * 镜面反射贴图的纹理ID.
+   */
+  private int specularMap;
 
   private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
   private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
@@ -153,11 +175,6 @@ public class Application {
     camera = new Camera(new Vector3f(-1.6f, -1.0f, 2.4f),
         new Vector3f(0, 1, 0),
         new Vector3f(16.6f, -45.5f, 0));
-
-    material = new Material();
-    material.setAmbient(materialAmbient);
-    material.setSpecular(materialSpecular);
-    material.setDiffuse(materialDiffuse);
   }
 
   public static void main(String[] args) {
@@ -189,6 +206,7 @@ public class Application {
     initGLFW();
     initOpenGL();
     initImGui();
+    initLightMap();
 
     // Make the window visible
     glfwShowWindow(window);
@@ -255,6 +273,11 @@ public class Application {
 
     setupShader();
     setupVao();
+  }
+
+  private void initLightMap() {
+    diffuseMap = texture2D("texture/box_diffuse_map.png");
+    specularMap = texture2D("texture/box_colorful_specular_map.png");
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
@@ -330,11 +353,14 @@ public class Application {
     glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
 
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, 24, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 32, 0);
     glEnableVertexAttribArray(0);
     // normal 法线
-    glVertexAttribPointer(1, 3, GL_FLOAT, false, 24, 12);
+    glVertexAttribPointer(1, 3, GL_FLOAT, false, 32, 12);
     glEnableVertexAttribArray(1);
+    // texture 纹理坐标
+    glVertexAttribPointer(2, 2, GL_FLOAT, false, 32, 24);
+    glEnableVertexAttribArray(2);
 
     glBindVertexArray(0);
   }
@@ -344,7 +370,7 @@ public class Application {
     glBindVertexArray(lightVao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, 24, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 32, 0);
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
@@ -352,40 +378,14 @@ public class Application {
 
   private void setupShader() throws IOException {
     boxShader = new ShaderProgram();
-    boxShader.createVertexShader(ResourcesUtil.getFileContent("box.vs.glsl"));
-    boxShader.createFragmentShader(ResourcesUtil.getFileContent("box.fs.glsl"));
+    boxShader.createVertexShader(ResourcesUtil.getFileContent("shader/box.vs.glsl"));
+    boxShader.createFragmentShader(ResourcesUtil.getFileContent("shader/box.fs.glsl"));
     boxShader.link();
 
     lightShader = new ShaderProgram();
-    lightShader.createVertexShader(ResourcesUtil.getFileContent("light.vs.glsl"));
-    lightShader.createFragmentShader(ResourcesUtil.getFileContent("light.fs.glsl"));
+    lightShader.createVertexShader(ResourcesUtil.getFileContent("shader/light.vs.glsl"));
+    lightShader.createFragmentShader(ResourcesUtil.getFileContent("shader/light.fs.glsl"));
     lightShader.link();
-  }
-
-  private int texture(String imageUrl) {
-    try (MemoryStack stack = stackPush()) {
-      int texture = glGenTextures();
-      glBindTexture(GL_TEXTURE_2D, texture);
-      // 为当前绑定的纹理对象设置环绕、过滤方式
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-      IntBuffer width = stack.mallocInt(1);
-      IntBuffer height = stack.mallocInt(1);
-      IntBuffer channels = stack.mallocInt(1);
-      STBImage.stbi_set_flip_vertically_on_load(true);
-      ByteBuffer imageData1 = STBImage.stbi_load(imageUrl, width, height, channels, 0);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width.get(0), height.get(0), 0, GL_RGB,
-          GL_UNSIGNED_BYTE, imageData1);
-      glGenerateMipmap(GL_TEXTURE_2D);
-
-      if (imageData1 != null) {
-        STBImage.stbi_image_free(imageData1);
-      }
-      return texture;
-    }
   }
 
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
@@ -428,9 +428,6 @@ public class Application {
     boxShader.setUniform("viewPos", camera.getPosition());
     boxShader.setUniform("lightColor", lightColor);
     boxShader.setUniform("material.shininess", materialShininess[0]);
-    boxShader.setUniform("material.ambient", material.getAmbient());
-    boxShader.setUniform("material.diffuse", material.getDiffuse());
-    boxShader.setUniform("material.specular", material.getSpecular());
 
     boxShader.setUniform("light.ambient", DEST.set(lightAmbient));
     boxShader.setUniform("light.diffuse", DEST.set(lightDiffuse));
@@ -442,6 +439,11 @@ public class Application {
     lightShader.bind();
     lightShader.setUniform("view", viewMatrix);
     lightShader.setUniform("lightColor", lightColor);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, diffuseMap);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, specularMap);
 
     glBindVertexArray(lightVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -477,15 +479,6 @@ public class Application {
 
     ImGui.text("Materials");
     ImGui.sliderFloat("shininess", materialShininess, 0, 1);
-    if (ImGui.colorEdit3("Material ambient", materialAmbient)) {
-      material.setAmbient(materialAmbient);
-    }
-    if (ImGui.colorEdit3("Material diffuse", materialDiffuse)) {
-      material.setDiffuse(materialDiffuse);
-    }
-    if (ImGui.colorEdit3("Material specular", materialSpecular)) {
-      material.setSpecular(materialSpecular);
-    }
 
     ImGui.separator();
     ImGui.text("Extra");
@@ -508,9 +501,8 @@ public class Application {
     boxShader.setUniform("light.diffuse", lightDiffuse);
     boxShader.setUniform("light.specular", lightSpecular);
     boxShader.setUniform("material.shininess", materialShininess[0]);
-    boxShader.setUniform("material.ambient", material.getAmbient());
-    boxShader.setUniform("material.diffuse", material.getDiffuse());
-    boxShader.setUniform("material.specular", material.getSpecular());
+    boxShader.setUniform("material.diffuseMap", 0);
+    boxShader.setUniform("material.specularMap", 1);
 
     glBindVertexArray(boxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);

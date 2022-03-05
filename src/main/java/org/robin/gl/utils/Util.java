@@ -1,8 +1,28 @@
 package org.robin.gl.utils;
 
+import static org.lwjgl.opengl.GL11.GL_LINEAR;
+import static org.lwjgl.opengl.GL11.GL_LINEAR_MIPMAP_LINEAR;
+import static org.lwjgl.opengl.GL11.GL_RED;
+import static org.lwjgl.opengl.GL11.GL_REPEAT;
+import static org.lwjgl.opengl.GL11.GL_RGB;
+import static org.lwjgl.opengl.GL11.GL_RGBA;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_MAG_FILTER;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_MIN_FILTER;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_S;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T;
+import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glGenTextures;
+import static org.lwjgl.opengl.GL11.glTexImage2D;
+import static org.lwjgl.opengl.GL11.glTexParameteri;
+import static org.lwjgl.opengl.GL30.glGenerateMipmap;
+import static org.lwjgl.system.MemoryStack.stackPush;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -14,6 +34,8 @@ import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.joml.Vector3f;
 import org.lwjgl.BufferUtils;
+import org.lwjgl.stb.STBImage;
+import org.lwjgl.system.MemoryStack;
 
 /**
  * Util.
@@ -85,5 +107,51 @@ public class Util {
 
   public static String stringVectors(Vector3f vector3f) {
     return String.format("x: %.1f, y: %.1f, z: %.1f", vector3f.x, vector3f.y, vector3f.z);
+  }
+
+  /**
+   * 创建一个 {@link org.lwjgl.opengl.GL11#GL_TEXTURE_2D} 类型的纹理.
+   *
+   * @param imageUrl 纹理路径
+   * @return 纹理ID
+   */
+  public static int texture2D(String imageUrl) {
+    ByteBuffer imageData = null;
+    try (MemoryStack stack = stackPush()) {
+      IntBuffer width = stack.mallocInt(1);
+      IntBuffer height = stack.mallocInt(1);
+      IntBuffer channels = stack.mallocInt(1);
+      STBImage.stbi_set_flip_vertically_on_load(true);
+      imageData = STBImage.stbi_load(imageUrl, width, height, channels, 0);
+      if (imageData == null) {
+        throw new RuntimeException("Could not load texture: " + imageUrl);
+      }
+      int c = channels.get(0);
+      int format = 0;
+      if (c == 1) {
+        format = GL_RED;
+      } else if (c == 3) {
+        format = GL_RGB;
+      } else if (c == 4) {
+        format = GL_RGBA;
+      }
+
+      int texture = glGenTextures();
+      glBindTexture(GL_TEXTURE_2D, texture);
+      glTexImage2D(GL_TEXTURE_2D, 0, format, width.get(0), height.get(0), 0, format,
+          GL_UNSIGNED_BYTE, imageData);
+      glGenerateMipmap(GL_TEXTURE_2D);
+      // 为当前绑定的纹理对象设置环绕、过滤方式
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+      return texture;
+    } finally {
+      if (imageData != null) {
+        STBImage.stbi_image_free(imageData);
+      }
+    }
   }
 }
