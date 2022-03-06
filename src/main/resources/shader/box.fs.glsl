@@ -47,12 +47,15 @@ struct SpotLight {
 
     vec3 ambient;
     vec3 diffuse;
+    sampler2D diffuseMap;
     vec3 specular;
 
     float constant;
     float linear;
     float quadratic;
 };
+
+uniform vec3 cameraRight;
 
 //#define NR_POINT_LIGHTS 4
 uniform ParallelLight parallelLight;
@@ -100,6 +103,14 @@ vec3 calcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     return (ambient + diffuse + specular);
 }
 
+vec3 projectVector(vec3 a, vec3 b) {
+    return (dot(a, b) / pow(length(b), 2)) * b;
+}
+
+float projectVectorScala(vec3 a, vec3 b) {
+    return dot(a, b) / length(b);
+}
+
 vec3 calcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     vec3 toLightDir = normalize(light.position - fragPos);
     // 漫反射光照: 被光源直接照射（角度小于 90）的片段更亮
@@ -109,7 +120,19 @@ vec3 calcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     vec3 reflectDir = reflect(-toLightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess * 128);
 
-    vec3 diffuseSample = texture(material.diffuseMap, TextureCoordinates).rgb;
+    vec3 cameraToFrag = fragPos - light.position;
+    vec3 cameraToCenter = projectVector(cameraToFrag, light.direction);
+    float radius = tan(acos(light.outerCutOff)) * length(cameraToCenter);
+    vec3 centerToFrag = cameraToFrag - cameraToCenter;
+    vec3 centerToR = projectVector(centerToFrag, cameraRight);
+    float tx = length(centerToR) / radius;
+    float ty = length(centerToFrag - centerToR) / radius;
+    if (centerToFrag.x < 0) tx = -tx;
+    if (centerToFrag.y < 0) ty = -ty;
+    tx = (tx + 1) / 2;
+    ty = (ty + 1) / 2;
+
+    vec3 diffuseSample = texture(light.diffuseMap, vec2(tx, ty)).rgb;
     vec3 specularSample = texture(material.specularMap, TextureCoordinates).rgb;
 
     vec3 ambient = light.ambient * diffuseSample;

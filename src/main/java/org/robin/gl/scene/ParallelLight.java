@@ -1,5 +1,6 @@
 package org.robin.gl.scene;
 
+import lombok.Builder;
 import org.joml.Vector3f;
 
 /**

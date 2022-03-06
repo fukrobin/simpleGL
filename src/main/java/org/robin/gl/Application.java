@@ -58,6 +58,7 @@ import static org.lwjgl.opengl.GL11.glClearColor;
 import static org.lwjgl.opengl.GL11.glDrawArrays;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glViewport;
+import static org.lwjgl.opengl.GL13.GL_TEXTURE2;
 import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.GL_STATIC_DRAW;
 import static org.lwjgl.opengl.GL15.GL_TEXTURE0;
@@ -78,6 +79,8 @@ import static org.robin.gl.utils.Util.texture2D;
 import imgui.ImGui;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiConfigFlags;
+import imgui.flag.ImGuiTreeNodeFlags;
+import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import java.io.IOException;
@@ -167,14 +170,11 @@ public class Application {
   private final PointLight pointLight;
   private final SpotLight spotLight;
 
-  private final float[] pointLightQuadratic = new float[]{0.0019f};
-  private final float[] pointLightLiner = new float[]{0.022f};
-
   //////////////////////////////////////////////////
   // Material
   //////////////////////////////////////////////////
 
-  private final float[] materialShininess = new float[]{0.5f};
+  private final float[] materialShininess = new float[]{0.25f};
   /**
    * 漫反射贴图的纹理ID.
    */
@@ -183,6 +183,12 @@ public class Application {
    * 镜面反射贴图的纹理ID.
    */
   private int specularMap;
+
+  private int spotDiffuseMap;
+
+  //////////////////////////////////////////////////
+  // ImGui
+  //////////////////////////////////////////////////
 
   private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
   private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
@@ -200,8 +206,21 @@ public class Application {
         new Vector3f(0, -90, 0));
 
     parallelLight = new ParallelLight(new Vector3f(1), new Vector3f(-0.2f, -1.0f, -0.3f));
-    pointLight = new PointLight(new Vector3f(1, 0, 0), new Vector3f(0.7f, 0.2f, 2.0f));
-    spotLight = new SpotLight(new Vector3f(0, 0, 1), camera.getTarget(), camera.getPosition());
+    parallelLight.setAmbientPercent(0.05f);
+    parallelLight.setDiffusePercent(0.4f);
+    parallelLight.updateColor();
+
+    pointLight = new PointLight(new Vector3f(1), new Vector3f(0.7f, 0.2f, 2.0f));
+    pointLight.setAmbientPercent(0.05f);
+    pointLight.setDiffusePercent(0.8f);
+    pointLight.updateColor();
+
+    spotLight = new SpotLight(new Vector3f(1), camera.getTarget(), camera.getPosition());
+    spotLight.setAmbientPercent(0);
+    spotLight.setDiffusePercent(1);
+    spotLight.updateColor();
+    spotLight.setCutOff(8);
+    spotLight.setOuterCutOff(12);
   }
 
   public static void main(String[] args) {
@@ -312,6 +331,7 @@ public class Application {
   private void initLightMap() {
     diffuseMap = texture2D("texture/box_diffuse_map.png");
     specularMap = texture2D("texture/box_specular_map.png");
+    spotDiffuseMap = texture2D("texture/kanna.jpg");
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
@@ -492,6 +512,7 @@ public class Application {
     boxShader.setUniform("view", camera.getViewMatrix());
     boxShader.setUniform("viewPos", camera.getPosition());
     boxShader.setUniform("material.shininess", materialShininess[0]);
+    boxShader.setUniform("cameraRight", camera.getRight());
 
     boxShader.setUniform("parallelLight.direction", parallelLight.getDirection());
     boxShader.setUniform("parallelLight.ambient", parallelLight.getAmbient());
@@ -503,9 +524,10 @@ public class Application {
     boxShader.setUniform("pointLight.diffuse", pointLight.getDiffuse());
     boxShader.setUniform("pointLight.specular", pointLight.getSpecular());
     boxShader.setUniform("pointLight.constant", 1.0f);
-    boxShader.setUniform("pointLight.linear", pointLightLiner[0]);
-    boxShader.setUniform("pointLight.quadratic", pointLightQuadratic[0]);
+    boxShader.setUniform("pointLight.linear", spotLight.getLinear());
+    boxShader.setUniform("pointLight.quadratic", spotLight.getQuadratic());
 
+    boxShader.setUniform("spotLight.diffuseMap", 2);
     boxShader.setUniform("spotLight.position", spotLight.getPosition());
     boxShader.setUniform("spotLight.direction", spotLight.getDirection());
     boxShader.setUniform("spotLight.cutOff", spotLight.getCutOff());
@@ -514,13 +536,15 @@ public class Application {
     boxShader.setUniform("spotLight.diffuse", spotLight.getDiffuse());
     boxShader.setUniform("spotLight.specular", spotLight.getSpecular());
     boxShader.setUniform("spotLight.constant", 1.0f);
-    boxShader.setUniform("spotLight.linear", pointLightLiner[0]);
-    boxShader.setUniform("spotLight.quadratic", pointLightQuadratic[0]);
+    boxShader.setUniform("spotLight.linear", spotLight.getLinear());
+    boxShader.setUniform("spotLight.quadratic", spotLight.getQuadratic());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, diffuseMap);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, specularMap);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, spotDiffuseMap);
 
     glBindVertexArray(boxVao);
     for (int i = 0, cubePositionsLength = cubePositions.length; i < cubePositionsLength; i++) {
@@ -570,38 +594,48 @@ public class Application {
 
   private void renderAttributeEditor() {
     ImGui.setNextWindowSize(350, 400, ImGuiCond.Once);
-    ImGui.setNextWindowPos(width - 360, 10, ImGuiCond.Once);
-    ImGui.begin("Attribute Editor");
+    ImGui.setNextWindowPos(10, 10, ImGuiCond.Once);
+    ImGui.begin("Attribute Editor", ImGuiWindowFlags.AlwaysAutoResize);
 
-    ImGui.labelText("Camera position", stringVectors(camera.getPosition()));
-    ImGui.labelText("Camera rotation", stringVectors(camera.getRotation()));
+    if (ImGui.collapsingHeader("Camera Info", ImGuiTreeNodeFlags.DefaultOpen)) {
+      ImGui.labelText("Camera position", stringVectors(camera.getPosition()));
+      ImGui.labelText("Camera Target", stringVectors(camera.getTarget()));
+      ImGui.labelText("Camera rotation", stringVectors(camera.getRotation()));
+    }
 
     ImGui.text("Materials");
     ImGui.sliderFloat("shininess", materialShininess, 0, 1);
 
     ImGui.separator();
-    ImGui.text("Parallel Light");
-    if (ImGui.colorEdit3("Parallel-Color", parallelLight.getColorFloats())) {
-      parallelLight.updateColor();
+    if (ImGui.collapsingHeader("Light Settings", ImGuiTreeNodeFlags.DefaultOpen)) {
+      if (ImGui.treeNodeEx("Parallel Light", ImGuiTreeNodeFlags.DefaultOpen)) {
+        if (ImGui.colorEdit3("Parallel-Color", parallelLight.getColorFloats())) {
+          parallelLight.updateColor();
+        }
+        if (ImGui.sliderFloat3("Parallel-Direction", parallelLight.getDirectionFloats(), -1, 1)) {
+          parallelLight.getDirection().set(parallelLight.getDirectionFloats());
+        }
+        ImGui.treePop();
+        ImGui.separator();
+      }
+      if (ImGui.treeNodeEx("Point Light", ImGuiTreeNodeFlags.DefaultOpen)) {
+        if (ImGui.colorEdit3("Point-Color", pointLight.getColorFloats())) {
+          pointLight.updateColor();
+        }
+        if (ImGui.sliderFloat3("Point-position", pointLight.getPositionFloats(), -5, 5)) {
+          pointLight.getPosition().set(pointLight.getPositionFloats());
+        }
+        ImGui.treePop();
+        ImGui.separator();
+      }
+      if (ImGui.treeNodeEx("Spot Light", ImGuiTreeNodeFlags.DefaultOpen)) {
+        if (ImGui.colorEdit3("Spot-Color", spotLight.getColorFloats())) {
+          spotLight.updateColor();
+        }
+        ImGui.treePop();
+        ImGui.separator();
+      }
     }
-    if (ImGui.sliderFloat3("Parallel-Direction", parallelLight.getDirectionFloats(), -1, 1)) {
-      parallelLight.getDirection().set(parallelLight.getDirectionFloats());
-    }
-
-    ImGui.text("Point Light");
-    if (ImGui.colorEdit3("Point-Color", pointLight.getColorFloats())) {
-      pointLight.updateColor();
-    }
-    if (ImGui.sliderFloat3("Point-position", pointLight.getPositionFloats(), -5, 5)) {
-      pointLight.getPosition().set(pointLight.getPositionFloats());
-    }
-
-    ImGui.text("Spot Light");
-    if (ImGui.colorEdit3("Spot-Color", spotLight.getColorFloats())) {
-      spotLight.updateColor();
-    }
-    ImGui.sliderFloat("Spot-liner", pointLightLiner, 0, 0.1f);
-    ImGui.sliderFloat("Spot-quadratic", pointLightQuadratic, 0, 0.1f);
 
     ImGui.end();
   }

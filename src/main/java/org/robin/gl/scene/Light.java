@@ -23,6 +23,9 @@ public class Light {
   private final Vector3f direction;
   private final Vector3f position;
 
+  protected float diffusePercent = 0.5f;
+  protected float ambientPercent = 0.2f;
+
   /**
    * 初始化光源.
    *
@@ -59,7 +62,7 @@ public class Light {
    */
   public void updateColor() {
     color.set(colorFloats);
-    color.mul(0.5f, diffuse);
-    color.mul(0.2f, ambient);
+    color.mul(diffusePercent, diffuse);
+    color.mul(ambientPercent, ambient);
   }
 }

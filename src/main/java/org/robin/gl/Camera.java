@@ -140,6 +140,10 @@ public class Camera {
     return target;
   }
 
+  public Vector3f getRight() {
+    return right;
+  }
+
   //////////////////////////////////////////////////
   // Function method
   //////////////////////////////////////////////////

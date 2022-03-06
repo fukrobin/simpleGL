@@ -1,5 +1,6 @@
 package org.robin.gl.scene;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.joml.Math;
@@ -27,7 +28,15 @@ public class SpotLight extends PointLight {
    */
   public SpotLight(Vector3f color, Vector3f direction, Vector3f position) {
     super(color, direction, position);
-    this.cutOff = Math.cos(Math.toRadians(12.5f));
-    this.outerCutOff = Math.cos(Math.toRadians(17.5f));
+    setCutOff(12.5f);
+    setOuterCutOff(17.5f);
+  }
+
+  public void setCutOff(float cutOff) {
+    this.cutOff = Math.cos(Math.toRadians(cutOff));
+  }
+
+  public void setOuterCutOff(float outerCutOff) {
+    this.outerCutOff = Math.cos(Math.toRadians(outerCutOff));
   }
 }
