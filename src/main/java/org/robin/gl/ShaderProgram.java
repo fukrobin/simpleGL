@@ -100,7 +100,13 @@ public class ShaderProgram {
   }
 
   private Integer getLocation(String uniformName) {
-    return uniforms.computeIfAbsent(uniformName, s -> glGetUniformLocation(programId, s));
+    Integer location = uniforms.computeIfAbsent(uniformName,
+                                               s -> glGetUniformLocation(programId, s));
+
+    if (location == -1) {
+      throw new ShaderException("Can't find uniform: " + uniformName);
+    }
+    return location;
   }
 
   /**

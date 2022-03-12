@@ -139,7 +139,7 @@ public class Util {
       int texture = glGenTextures();
       glBindTexture(GL_TEXTURE_2D, texture);
       glTexImage2D(GL_TEXTURE_2D, 0, format, width.get(0), height.get(0), 0, format,
-          GL_UNSIGNED_BYTE, imageData);
+                   GL_UNSIGNED_BYTE, imageData);
       glGenerateMipmap(GL_TEXTURE_2D);
       // 为当前绑定的纹理对象设置环绕、过滤方式
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -153,5 +153,17 @@ public class Util {
         STBImage.stbi_image_free(imageData);
       }
     }
+  }
+
+  /**
+   * Convert {@link List} to array.
+   */
+  public static float[] toArray(List<Float> list) {
+    int size = list != null ? list.size() : 0;
+    float[] floatArr = new float[size];
+    for (int i = 0; i < size; i++) {
+      floatArr[i] = list.get(i);
+    }
+    return floatArr;
   }
 }
