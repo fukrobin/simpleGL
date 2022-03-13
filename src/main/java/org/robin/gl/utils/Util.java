@@ -16,6 +16,7 @@ import static org.lwjgl.opengl.GL11.glBindTexture;
 import static org.lwjgl.opengl.GL11.glGenTextures;
 import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL11.glTexParameteri;
+import static org.lwjgl.opengl.GL12.*;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 import static org.lwjgl.system.MemoryStack.stackPush;
 
@@ -128,12 +129,14 @@ public class Util {
       }
       int c = channels.get(0);
       int format = 0;
+      int textureParam = GL_REPEAT;
       if (c == 1) {
         format = GL_RED;
       } else if (c == 3) {
         format = GL_RGB;
       } else if (c == 4) {
         format = GL_RGBA;
+        textureParam = GL_CLAMP_TO_EDGE;
       }
 
       int texture = glGenTextures();
@@ -142,8 +145,8 @@ public class Util {
                    GL_UNSIGNED_BYTE, imageData);
       glGenerateMipmap(GL_TEXTURE_2D);
       // 为当前绑定的纹理对象设置环绕、过滤方式
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, textureParam);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, textureParam);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 

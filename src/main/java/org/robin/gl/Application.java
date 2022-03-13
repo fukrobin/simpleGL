@@ -78,7 +78,6 @@ import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.Callback;
 import org.lwjgl.system.MemoryStack;
-import org.robin.gl.model.Model;
 import org.robin.gl.scene.Camera;
 import org.robin.gl.scene.Light;
 import org.robin.gl.scene.ParallelLight;
@@ -106,8 +105,6 @@ public class Application {
 
   private final Vector3f clearColor = new Vector3f(1);
 
-  private Model model;
-
   //////////////////////////////////////////////////
   // Cursor
   //////////////////////////////////////////////////
@@ -128,8 +125,6 @@ public class Application {
 
   private ShaderProgram parallelLightShader;
   private ShaderProgram pointLightShader;
-  private ShaderProgram modelShader;
-  private ShaderProgram stencilShader;
 
   //////////////////////////////////////////////////
   // light
@@ -196,7 +191,6 @@ public class Application {
     } catch (Exception e) {
       e.printStackTrace();
     } finally {
-      model.cleanup();
 
       MemoryManager.cleanup();
 
@@ -220,7 +214,7 @@ public class Application {
     initGLFW();
     initOpenGL();
     initImGui();
-    loadModel();
+    initBlend();
 
     glfwShowWindow(window);
   }
@@ -292,17 +286,12 @@ public class Application {
   private void initOpenGL() {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+
     glEnable(GL_STENCIL_TEST);
-    // glEnable(GL_LINE_SMOOTH);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
     setupShader();
     setupVao();
-  }
-
-  private void loadModel() {
-    model = new Model("asserts/model/nanosuit/nanosuit.obj");
-    // model = new Model("asserts/model/box/box.obj");
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
@@ -407,18 +396,124 @@ public class Application {
                                                      "shader/parallelLight.fs.glsl");
     pointLightShader    = MemoryManager.createShader("shader/pointLight.vs.glsl",
                                                      "shader/pointLight.fs.glsl");
-    modelShader         = MemoryManager.createShader("shader/model.vs.glsl",
-                                                     "shader/model.fs.glsl");
-    stencilShader       = MemoryManager.createShader("shader/stencil_test.vs.glsl",
-                                                     "shader/color.fs.glsl");
   }
 
-  private void initShader() {
-    modelShader.bind();
-    modelShader.setUniform("material.shininess", materialShininess[0]);
+  private ShaderProgram shader;
 
-    glBindVertexArray(boxVao);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+  private void initShader() {
+    shader = MemoryManager.createShader("shader/blend.vs.glsl",
+                                        "shader/blend.fs.glsl");
+    shader.bind();
+    shader.setUniform("texture1", 0);
+  }
+
+  //////////////////////////////////////////////////
+  // Blend test
+  //////////////////////////////////////////////////
+
+  private void initBlend() {
+    glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    initFloorPlane();
+    initGlassWindow();
+  }
+
+  //////////////////////////////////////////////////
+  // Glass window
+  //////////////////////////////////////////////////
+
+  private final float[] windowVertices = new float[]{
+      0.0f, 0.5f, 0.0f, 0.0f, 0.0f,
+      0.0f, -0.5f, 0.0f, 0.0f, 1.0f,
+      1.0f, -0.5f, 0.0f, 1.0f, 1.0f,
+
+      0.0f, 0.5f, 0.0f, 0.0f, 0.0f,
+      1.0f, -0.5f, 0.0f, 1.0f, 1.0f,
+      1.0f, 0.5f, 0.0f, 1.0f, 0.0f
+  };
+
+  private final Vector3f[] windowPositions = new Vector3f[]{
+      new Vector3f(-1.5f, 0.0f, -0.48f),
+      new Vector3f(1.5f, 0.0f, 0.51f),
+      new Vector3f(0.0f, 0.0f, 0.7f),
+      new Vector3f(-0.3f, 0.0f, -2.3f),
+      new Vector3f(0.5f, 0.0f, -0.6f)
+  };
+
+  private int transparentVao;
+  private int transparentTexture;
+
+  private void initGlassWindow() {
+    transparentVao = glGenVertexArrays();
+    int transparentVbo = glGenBuffers();
+
+    glBindVertexArray(transparentVao);
+    glBindBuffer(GL_ARRAY_BUFFER, transparentVbo);
+    glBufferData(GL_ARRAY_BUFFER, windowVertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
+
+    transparentTexture = Util.texture2D("asserts/texture/window.png");
+  }
+
+  private void renderGlassWindow() {
+    glBindVertexArray(transparentVao);
+    glBindTexture(GL_TEXTURE_2D, transparentTexture);
+
+    for (Vector3f position : windowPositions) {
+      shader.setUniform("model", DEST_MATRIX.identity().translate(position));
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+  }
+
+  //////////////////////////////////////////////////
+  // Floor plane
+  //////////////////////////////////////////////////
+
+  private final float[] planeVertices = new float[]{
+      5.0f, -0.5f, 5.0f, 2.0f, 0.0f,
+      -5.0f, -0.5f, 5.0f, 0.0f, 0.0f,
+      -5.0f, -0.5f, -5.0f, 0.0f, 2.0f,
+
+      5.0f, -0.5f, 5.0f, 2.0f, 0.0f,
+      -5.0f, -0.5f, -5.0f, 0.0f, 2.0f,
+      5.0f, -0.5f, -5.0f, 2.0f, 2.0f
+  };
+
+  private int floorPlaneVao;
+  private int floorTexture;
+
+  private void initFloorPlane() {
+    floorPlaneVao = glGenVertexArrays();
+    int planeVbo = glGenBuffers();
+
+    glBindVertexArray(floorPlaneVao);
+    glBindBuffer(GL_ARRAY_BUFFER, planeVbo);
+    glBufferData(GL_ARRAY_BUFFER, planeVertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, 20, 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, false, 20, 12);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
+
+    floorTexture = Util.texture2D("asserts/texture/metal.png");
+  }
+
+  private void renderFloor() {
+    shader.setUniform("model", DEST_MATRIX.identity());
+
+    glBindVertexArray(floorPlaneVao);
+    glBindTexture(GL_TEXTURE_2D, floorTexture);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
   }
 
   @SuppressWarnings("checkstyle:EmptyCatchBlock")
@@ -442,54 +537,19 @@ public class Application {
   //////////////////////////////////////////////////
 
   private void render() {
-    // renderBox();
-    renderModel();
-
+    renderBlend();
     renderLight();
 
     glBindVertexArray(0);
   }
 
-  private void renderModel() {
-    // step 1
-    modelShader.bind();
+  private void renderBlend() {
+    shader.bind();
+    shader.setUniform("view", camera.getViewMatrix());
+    shader.setUniform("projection", camera.getProjectionMatrix());
 
-    model.scale(.5f);
-    modelShader.setUniform("model", model.getModelMatrix());
-    modelShader.setUniform("view", camera.getViewMatrix());
-    modelShader.setUniform("projection", camera.getProjectionMatrix());
-
-    modelShader.setUniform("viewPos", camera.getPosition());
-    modelShader.setUniform("material.shininess", materialShininess[0]);
-
-    setLightUniforms(modelShader, pointLight, "pointLight");
-    setLightUniforms(modelShader, spotLight, "spotLight");
-    setLightUniforms(modelShader, parallelLight, "parallelLight");
-
-    glStencilFunc(GL_ALWAYS, 1, 0xff);
-    glStencilMask(0xff);
-    model.draw(modelShader);
-
-    // stencil test border
-    glStencilFunc(GL_NOTEQUAL, 1, 0xff);
-    glStencilMask(0x00);
-    glDisable(GL_DEPTH_TEST);
-
-    stencilShader.bind();
-    stencilShader.setUniform("view", camera.getViewMatrix());
-    stencilShader.setUniform("projection", camera.getProjectionMatrix());
-    stencilShader.setUniform("model", model.getModelMatrix());
-    stencilShader.setUniform("color", DEST_VECTOR3.set(modelStencilColor));
-    stencilShader.setUniform("scale", modelScale[0]);
-
-    model.draw(stencilShader);
-
-    // step 3. restore
-    glStencilMask(0xff);
-    glStencilFunc(GL_ALWAYS, 0, 0xff);
-    glEnable(GL_DEPTH_TEST);
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    renderFloor();
+    renderGlassWindow();
   }
 
   private void setLightUniforms(ShaderProgram shader, Light light, String name) {
