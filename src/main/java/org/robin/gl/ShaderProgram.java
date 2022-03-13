@@ -31,8 +31,10 @@ import static org.lwjgl.opengl.GL20.glValidateProgram;
 import static org.lwjgl.opengl.GL31.glGetUniformBlockIndex;
 import static org.lwjgl.opengl.GL31.glUniformBlockBinding;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
@@ -46,7 +48,7 @@ import org.lwjgl.system.MemoryStack;
 public class ShaderProgram {
 
   private final Map<String, Integer> uniforms;
-  private final int programId;
+  private final int                  programId;
 
   private int vertexShaderId;
   private int fragmentShaderId;
@@ -60,20 +62,30 @@ public class ShaderProgram {
     uniforms = new HashMap<>();
   }
 
+  /**
+   * 自动加载文件内容，创建着色器并link.
+   *
+   * @param vertexShaderPath   顶点着色器文件路径
+   * @param fragmentShaderPath 片段着色器文件路径
+   */
+  public ShaderProgram(String vertexShaderPath, String fragmentShaderPath) {
+    this();
+    try {
+      createShader(vertexShaderPath, fragmentShaderPath);
+    } catch (IOException e) {
+      cleanup();
+      throw new ShaderException("can't create shader, please check path is valid: "
+                                    + vertexShaderPath + ", "
+                                    + fragmentShaderPath);
+    }
+  }
+
   public int getVertexShaderId() {
     return vertexShaderId;
   }
 
-  public void setVertexShaderId(int vertexShaderId) {
-    this.vertexShaderId = vertexShaderId;
-  }
-
   public int getFragmentShaderId() {
     return fragmentShaderId;
-  }
-
-  public void setFragmentShaderId(int fragmentShaderId) {
-    this.fragmentShaderId = fragmentShaderId;
   }
 
   /**
@@ -101,7 +113,7 @@ public class ShaderProgram {
 
   private Integer getLocation(String uniformName) {
     Integer location = uniforms.computeIfAbsent(uniformName,
-                                               s -> glGetUniformLocation(programId, s));
+                                                s -> glGetUniformLocation(programId, s));
 
     if (location == -1) {
       throw new ShaderException("Can't find uniform: " + uniformName);
@@ -167,6 +179,19 @@ public class ShaderProgram {
     fragmentShaderId = createShader(shaderCode, GL_FRAGMENT_SHADER);
   }
 
+  /**
+   * 优先使用已加载的相同的着色器，并在成功创建着色器后自动 link.
+   *
+   * @param vertexShaderPath   顶点着色器文件路径
+   * @param fragmentShaderPath 片段着色器文件路径
+   * @throws IOException 如果找不到，则抛出异常，记得在异常后使用 {@link ShaderProgram#cleanup()} 释放必要资源
+   */
+  public void createShader(String vertexShaderPath, String fragmentShaderPath) throws IOException {
+    createVertexShader(ResourcesUtil.getFileContent(vertexShaderPath));
+    createFragmentShader(ResourcesUtil.getFileContent(fragmentShaderPath));
+    link();
+  }
+
   protected int createShader(String shaderCode, int shaderType) {
     int shaderId = glCreateShader(shaderType);
     throwIfInvalid(shaderId, "Can't create shader.");
@@ -175,7 +200,7 @@ public class ShaderProgram {
     glCompileShader(shaderId);
 
     throwIfInvalid(glGetShaderi(shaderId, GL_COMPILE_STATUS),
-        "Error compiling Shader code: " + glGetShaderInfoLog(shaderId, 1024));
+                   "Error compiling Shader code: " + glGetShaderInfoLog(shaderId, 1024));
 
     glAttachShader(programId, shaderId);
 
@@ -188,7 +213,7 @@ public class ShaderProgram {
   public void link() {
     glLinkProgram(programId);
     throwIfInvalid(glGetProgrami(programId, GL_LINK_STATUS),
-        "Can't link shader program: " + glGetProgramInfoLog(programId, 1024));
+                   "Can't link shader program: " + glGetProgramInfoLog(programId, 1024));
 
     if (vertexShaderId != 0) {
       glDetachShader(programId, vertexShaderId);
@@ -199,7 +224,7 @@ public class ShaderProgram {
 
     glValidateProgram(programId);
     throwIfInvalid(glGetProgrami(programId, GL_VALIDATE_STATUS),
-        "Warning validating Shader code: " + glGetProgramInfoLog(programId, 1024));
+                   "Warning validating Shader code: " + glGetProgramInfoLog(programId, 1024));
   }
 
   public void bind() {
@@ -236,5 +261,23 @@ public class ShaderProgram {
     if (value <= 0) {
       throw new ShaderException(errorMessage);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    ShaderProgram that = (ShaderProgram) o;
+    return programId == that.programId && vertexShaderId == that.vertexShaderId
+        && fragmentShaderId == that.fragmentShaderId;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(programId, vertexShaderId, fragmentShaderId);
   }
 }

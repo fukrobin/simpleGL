@@ -47,26 +47,9 @@ import static org.lwjgl.glfw.GLFW.glfwSwapInterval;
 import static org.lwjgl.glfw.GLFW.glfwTerminate;
 import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 import static org.lwjgl.glfw.GLFW.glfwWindowShouldClose;
-import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
-import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
-import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
-import static org.lwjgl.opengl.GL11.GL_FLOAT;
-import static org.lwjgl.opengl.GL11.GL_TRIANGLES;
-import static org.lwjgl.opengl.GL11.glClear;
-import static org.lwjgl.opengl.GL11.glClearColor;
-import static org.lwjgl.opengl.GL11.glDrawArrays;
-import static org.lwjgl.opengl.GL11.glEnable;
-import static org.lwjgl.opengl.GL11.glViewport;
-import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
-import static org.lwjgl.opengl.GL15.GL_STATIC_DRAW;
-import static org.lwjgl.opengl.GL15.glBindBuffer;
-import static org.lwjgl.opengl.GL15.glBufferData;
-import static org.lwjgl.opengl.GL15.glDeleteBuffers;
-import static org.lwjgl.opengl.GL15.glGenBuffers;
-import static org.lwjgl.opengl.GL30.glBindVertexArray;
-import static org.lwjgl.opengl.GL30.glEnableVertexAttribArray;
-import static org.lwjgl.opengl.GL30.glGenVertexArrays;
-import static org.lwjgl.opengl.GL30.glVertexAttribPointer;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL15.*;
+import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.system.MemoryUtil.memAddressSafe;
 import static org.robin.gl.utils.Util.stringVectors;
@@ -77,7 +60,6 @@ import imgui.flag.ImGuiConfigFlags;
 import imgui.flag.ImGuiTreeNodeFlags;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
-import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.Objects;
@@ -93,7 +75,7 @@ import org.lwjgl.glfw.GLFWKeyCallbackI;
 import org.lwjgl.glfw.GLFWMouseButtonCallbackI;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.glfw.GLFWWindowSizeCallbackI;
-import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.*;
 import org.lwjgl.system.Callback;
 import org.lwjgl.system.MemoryStack;
 import org.robin.gl.model.Model;
@@ -103,6 +85,7 @@ import org.robin.gl.scene.ParallelLight;
 import org.robin.gl.scene.PointLight;
 import org.robin.gl.scene.SpotLight;
 import org.robin.gl.utils.ImGuiImplGlfw;
+import org.robin.gl.utils.MemoryManager;
 import org.robin.gl.utils.Util;
 
 /**
@@ -112,15 +95,16 @@ import org.robin.gl.utils.Util;
  */
 public class Application {
 
-  private static final Matrix4f DEST_MATRIX = new Matrix4f();
+  private static final Vector3f DEST_VECTOR3 = new Vector3f();
+  private static final Matrix4f DEST_MATRIX  = new Matrix4f();
 
   private final Camera camera;
 
   private long window;
-  private int width;
-  private int height;
+  private int  width;
+  private int  height;
 
-  private final Vector3f clearColor = new Vector3f(0.05f);
+  private final Vector3f clearColor = new Vector3f(1);
 
   private Model model;
 
@@ -128,11 +112,11 @@ public class Application {
   // Cursor
   //////////////////////////////////////////////////
 
-  private final AtomicBoolean firstCursor = new AtomicBoolean(true);
+  private final AtomicBoolean firstCursor  = new AtomicBoolean(true);
   private final AtomicBoolean cursorHidden = new AtomicBoolean(true);
-  private double lastCursorPosX;
-  private double lastCursorPosY;
-  private float lastFrameTime;
+  private       double        lastCursorPosX;
+  private       double        lastCursorPosY;
+  private       float         lastFrameTime;
 
   //////////////////////////////////////////////////
   // Shader
@@ -145,14 +129,15 @@ public class Application {
   private ShaderProgram parallelLightShader;
   private ShaderProgram pointLightShader;
   private ShaderProgram modelShader;
+  private ShaderProgram stencilShader;
 
   //////////////////////////////////////////////////
   // light
   //////////////////////////////////////////////////
 
-  private final Light parallelLight;
+  private final Light      parallelLight;
   private final PointLight pointLight;
-  private final SpotLight spotLight;
+  private final SpotLight  spotLight;
 
   //////////////////////////////////////////////////
   // Material
@@ -164,14 +149,14 @@ public class Application {
   // ImGui
   //////////////////////////////////////////////////
 
-  private final ImGuiImplGl3 imGuiImplGl3 = new ImGuiImplGl3();
+  private final ImGuiImplGl3  imGuiImplGl3  = new ImGuiImplGl3();
   private final ImGuiImplGlfw imGuiImplGlfw = new ImGuiImplGlfw();
 
   /**
    * 设置 Window 的一些初始值.
    */
   public Application() {
-    width = 1000;
+    width  = 1000;
     height = 600;
     camera = new Camera(new Vector3f(0, 0, 3),
                         new Vector3f(0, 1, 0),
@@ -213,9 +198,7 @@ public class Application {
     } finally {
       model.cleanup();
 
-      parallelLightShader.cleanup();
-      pointLightShader.cleanup();
-      modelShader.cleanup();
+      MemoryManager.cleanup();
 
       glDeleteBuffers(boxVao);
       glDeleteBuffers(vbo);
@@ -233,7 +216,7 @@ public class Application {
     }
   }
 
-  private void init() throws Exception {
+  private void init() {
     initGLFW();
     initOpenGL();
     initImGui();
@@ -271,10 +254,10 @@ public class Application {
     glfwSetMouseButtonCallback(window, mouseButtonCallback());
 
     try (MemoryStack stack = MemoryStack.stackPush()) {
-      IntBuffer widthBuffer = stack.mallocInt(1);
+      IntBuffer widthBuffer  = stack.mallocInt(1);
       IntBuffer heightBuffer = stack.mallocInt(1);
       glfwGetWindowSize(window, widthBuffer, heightBuffer);
-      width = widthBuffer.get(0);
+      width  = widthBuffer.get(0);
       height = heightBuffer.get(0);
       camera.setViewWidth(width);
       camera.setViewHeight(height);
@@ -306,9 +289,12 @@ public class Application {
   }
 
   @SuppressWarnings("CheckStyle")
-  private void initOpenGL() throws IOException {
+  private void initOpenGL() {
     GL.createCapabilities();
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_STENCIL_TEST);
+    // glEnable(GL_LINE_SMOOTH);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
     setupShader();
     setupVao();
@@ -316,11 +302,12 @@ public class Application {
 
   private void loadModel() {
     model = new Model("asserts/model/nanosuit/nanosuit.obj");
+    // model = new Model("asserts/model/box/box.obj");
   }
 
   private GLFWWindowSizeCallbackI windowSizeCallback() {
     return (window1, width1, height1) -> {
-      this.width = width1;
+      this.width  = width1;
       this.height = height1;
       camera.setViewWidth(width1);
       camera.setViewHeight(height1);
@@ -415,21 +402,15 @@ public class Application {
     glBindVertexArray(0);
   }
 
-  private void setupShader() throws IOException {
-    parallelLightShader = createShader("shader/parallelLight.vs.glsl",
-                                       "shader/parallelLight.fs.glsl");
-    pointLightShader = createShader("shader/pointLight.vs.glsl",
-                                    "shader/pointLight.fs.glsl");
-    modelShader = createShader("shader/model.vs.glsl", "shader/model.fs.glsl");
-  }
-
-  private ShaderProgram createShader(final String vertexShaderPath,
-                                     final String fragmentShaderPath) throws IOException {
-    ShaderProgram shader = new ShaderProgram();
-    shader.createVertexShader(ResourcesUtil.getFileContent(vertexShaderPath));
-    shader.createFragmentShader(ResourcesUtil.getFileContent(fragmentShaderPath));
-    shader.link();
-    return shader;
+  private void setupShader() {
+    parallelLightShader = MemoryManager.createShader("shader/parallelLight.vs.glsl",
+                                                     "shader/parallelLight.fs.glsl");
+    pointLightShader    = MemoryManager.createShader("shader/pointLight.vs.glsl",
+                                                     "shader/pointLight.fs.glsl");
+    modelShader         = MemoryManager.createShader("shader/model.vs.glsl",
+                                                     "shader/model.fs.glsl");
+    stencilShader       = MemoryManager.createShader("shader/stencil_test.vs.glsl",
+                                                     "shader/color.fs.glsl");
   }
 
   private void initShader() {
@@ -460,8 +441,6 @@ public class Application {
   // Render
   //////////////////////////////////////////////////
 
-  private final Matrix4f modelMatrix = new Matrix4f();
-
   private void render() {
     // renderBox();
     renderModel();
@@ -472,12 +451,11 @@ public class Application {
   }
 
   private void renderModel() {
+    // step 1
     modelShader.bind();
 
-    modelMatrix.identity()
-               .translate(0, 0, 0)
-               .scale(0.5f);
-    modelShader.setUniform("model", modelMatrix);
+    model.scale(.5f);
+    modelShader.setUniform("model", model.getModelMatrix());
     modelShader.setUniform("view", camera.getViewMatrix());
     modelShader.setUniform("projection", camera.getProjectionMatrix());
 
@@ -488,7 +466,30 @@ public class Application {
     setLightUniforms(modelShader, spotLight, "spotLight");
     setLightUniforms(modelShader, parallelLight, "parallelLight");
 
+    glStencilFunc(GL_ALWAYS, 1, 0xff);
+    glStencilMask(0xff);
     model.draw(modelShader);
+
+    // stencil test border
+    glStencilFunc(GL_NOTEQUAL, 1, 0xff);
+    glStencilMask(0x00);
+    glDisable(GL_DEPTH_TEST);
+
+    stencilShader.bind();
+    stencilShader.setUniform("view", camera.getViewMatrix());
+    stencilShader.setUniform("projection", camera.getProjectionMatrix());
+    stencilShader.setUniform("model", model.getModelMatrix());
+    stencilShader.setUniform("color", DEST_VECTOR3.set(modelStencilColor));
+    stencilShader.setUniform("scale", modelScale[0]);
+
+    model.draw(stencilShader);
+
+    // step 3. restore
+    glStencilMask(0xff);
+    glStencilFunc(GL_ALWAYS, 0, 0xff);
+    glEnable(GL_DEPTH_TEST);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   }
 
   private void setLightUniforms(ShaderProgram shader, Light light, String name) {
@@ -532,6 +533,10 @@ public class Application {
     glDrawArrays(GL_TRIANGLES, 0, 36);
   }
 
+  //////////////////////////////////////////////////
+  // ImGui
+  //////////////////////////////////////////////////
+
   private void renderImGui() {
     imGuiImplGlfw.newFrame();
     ImGui.newFrame();
@@ -555,15 +560,28 @@ public class Application {
     ImGui.setNextWindowPos(10, 10, ImGuiCond.Once);
     ImGui.begin("Attribute Editor", ImGuiWindowFlags.AlwaysAutoResize);
 
+    imGui_cameraInfo();
+    imGui_Material();
+    imGui_lightSettings();
+    imGui_Model();
+
+    ImGui.end();
+  }
+
+  private void imGui_Material() {
+    ImGui.text("Materials");
+    ImGui.sliderFloat("shininess", materialShininess, 0, 1);
+  }
+
+  private void imGui_cameraInfo() {
     if (ImGui.collapsingHeader("Camera Info", ImGuiTreeNodeFlags.DefaultOpen)) {
       ImGui.labelText("Camera position", stringVectors(camera.getPosition()));
       ImGui.labelText("Camera Target", stringVectors(camera.getTarget()));
       ImGui.labelText("Camera rotation", stringVectors(camera.getRotation()));
     }
+  }
 
-    ImGui.text("Materials");
-    ImGui.sliderFloat("shininess", materialShininess, 0, 1);
-
+  private void imGui_lightSettings() {
     ImGui.separator();
     if (ImGui.collapsingHeader("Light Settings", ImGuiTreeNodeFlags.DefaultOpen)) {
       if (ImGui.treeNodeEx("Parallel Light", ImGuiTreeNodeFlags.DefaultOpen)) {
@@ -594,16 +612,27 @@ public class Application {
         ImGui.separator();
       }
     }
+  }
 
-    ImGui.end();
+  private final float[] modelScale        = new float[]{0.01f};
+  private final float[] modelStencilColor = new float[]{1, 0, 0};
+
+  private void imGui_Model() {
+    ImGui.separator();
+    if (ImGui.collapsingHeader("Model Settings", ImGuiTreeNodeFlags.DefaultOpen)) {
+      ImGui.sliderFloat("Scale", modelScale, 0, 0.1f);
+      ImGui.colorEdit3("Stencil Color", modelStencilColor);
+    }
   }
 
   protected void preFrame() {
     glClearColor(clearColor.x, clearColor.y, clearColor.z, 1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glStencilMask(0x00);
 
     float currentFrameTime = (float) glfwGetTime();
-    float deltaTime = currentFrameTime - lastFrameTime;
+    float deltaTime        = currentFrameTime - lastFrameTime;
     lastFrameTime = currentFrameTime;
     camera.setSpeed(2.5f * deltaTime);
 
